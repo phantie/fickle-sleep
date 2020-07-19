@@ -2,9 +2,9 @@ import datetime as dt
 import toml
 from pprint import pprint
 from os import path
-from sys import argv
+# from sys import argv
 from enum import Enum, auto
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
 
 aDay = dt.timedelta(days=1)
 
@@ -43,7 +43,7 @@ def get_config_data():
 
             assert validate(hours, 24) and validate(minutes, 60)
             assert dt.timedelta(hours=hours, minutes=minutes) < aDay
-            return dict(hoursPlanned=hours, minutesPlanned=minutes)
+            return hours, minutes
 
         except (ValueError, AssertionError):
             print('Invalid input')
@@ -51,13 +51,19 @@ def get_config_data():
 
 
     hours, minutes = input('\tHours: '), input('\tMinutes: ')
+    hours, minutes = parse_time_period(hours, minutes)
+    
+    data = Config(
+        hoursPlanned=hours,
+        minutesPlanned=minutes,
+    )
 
-    return parse_time_period(hours, minutes)
+    return data
 
 def create_config():
-    print('-- SETUP --\n\n? Planned rest per day')
+    print(': SETUP\n\n? Planned rest per day')
 
-    config_data = get_config_data()
+    config_data = asdict(get_config_data())
 
     with open(CONFIG_FILE__NAME, 'w') as cfile:
         toml.dump(config_data, cfile)
@@ -66,14 +72,19 @@ def get_config():
     if not path.exists(CONFIG_FILE__NAME):
         create_config()
 
-    config = toml.load(CONFIG_FILE__NAME)
+    _config = toml.load(CONFIG_FILE__NAME)
 
     for field_name, field in Config.fields.items():
-        if not isinstance(config.get(field_name), field.type):
-            print('!!! Config file is corrupped')
+        if not isinstance(_config.get(field_name), field.type):
+            print('! Config file is corrupped')
             create_config()
-            config = toml.load(CONFIG_FILE__NAME)
+            _config = toml.load(CONFIG_FILE__NAME)
             break
+    
+    config = Config(
+        hoursPlanned=_config['hoursPlanned'],
+        minutesPlanned=_config['minutesPlanned'],
+        )
 
     return config
 
@@ -140,7 +151,7 @@ def main():
     config = get_config()
     log = get_log()
 
-    restPerDay = dt.timedelta(hours=config['hoursPlanned'], minutes=config['minutesPlanned'])
+    restPerDay = dt.timedelta(hours=config.hoursPlanned, minutes=config.minutesPlanned)
 
     fraction = calculate_fraction_of_day(restPerDay)
 
