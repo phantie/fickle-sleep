@@ -3,22 +3,35 @@ import toml
 from pprint import pprint
 from os import path
 from sys import argv
+from enum import Enum, auto
+from dataclasses import dataclass
 
 aDay = dt.timedelta(days=1)
 
 CONFIG_FILE__NAME = "conf.toml"
-CONFIG_FILE__FIELDS = [
-    ('hoursPlanned', int),
-    ('minutesPlanned', int),
-]
-HISTORY_FILE__NAME = "log.txt"
+LOG_FILE__NAME = "log.txt"
 
 def create_file(filename):
     with open(filename, "w"):
         pass
 
+class classproperty(object):
+    def __init__(self, fget):
+        self.fget = fget
+    def __get__(self, owner_self, owner_cls):
+        return self.fget(owner_cls)
 
-def getATPS():
+@dataclass
+class Config:
+    hoursPlanned: int
+    minutesPlanned: int
+    
+    
+    @classproperty
+    def fields(cls):
+        return cls.__dataclass_fields__
+
+def get_config_data():
     def parse_time_period(hours, minutes):
         def validate(duration, upper_bound, lower_bound = 0):
             return lower_bound <= duration <= upper_bound
@@ -30,7 +43,7 @@ def getATPS():
 
             assert validate(hours, 24) and validate(minutes, 60)
             assert dt.timedelta(hours=hours, minutes=minutes) < aDay
-            return hours, minutes
+            return dict(hoursPlanned=hours, minutesPlanned=minutes)
 
         except (ValueError, AssertionError):
             print('Invalid input')
@@ -44,15 +57,10 @@ def getATPS():
 def create_config():
     print('-- SETUP --\n\n? Planned rest per day')
 
-    hoursPlanned, minutesPlanned = getATPS()
-
-    config = dict(
-        hoursPlanned = hoursPlanned,
-        minutesPlanned = minutesPlanned
-    )
+    config_data = get_config_data()
 
     with open(CONFIG_FILE__NAME, 'w') as cfile:
-        toml.dump(config, cfile)
+        toml.dump(config_data, cfile)
 
 def get_config():
     if not path.exists(CONFIG_FILE__NAME):
@@ -60,8 +68,8 @@ def get_config():
 
     config = toml.load(CONFIG_FILE__NAME)
 
-    for field_name, field_type in CONFIG_FILE__FIELDS:
-        if not isinstance(config.get(field_name), field_type):
+    for field_name, field in Config.fields.items():
+        if not isinstance(config.get(field_name), field.type):
             print('!!! Config file is corrupped')
             create_config()
             config = toml.load(CONFIG_FILE__NAME)
@@ -69,35 +77,77 @@ def get_config():
 
     return config
 
-def get_history():
+def get_log():
     
 
-    if not path.exists(HISTORY_FILE__NAME):
-        create_file(HISTORY_FILE__NAME)
+    if not path.exists(LOG_FILE__NAME):
+        create_file(LOG_FILE__NAME)
 
-    with open(HISTORY_FILE__NAME, "r") as log_file:
+    with open(LOG_FILE__NAME, "r") as log_file:
         return list(line.rstrip('\n') for line in log_file.readlines())
 
-def process_clargs():
-    if len(argv) > 1 and "reset-config" in argv:
-        create_config()
+# def process_clargs():
+#     if len(argv) > 1 and "reset-config" in argv:
+#         create_config()
 
-class Duration:
-    def _validate(self):
-        pass
+def duration_to_str(val: dt.timedelta):
+    assert val < aDay
 
+def duration_to_timedelta(val: str):
+    pass
+
+def calculate_fraction_of_day(var):
+    return var.seconds / (24 * 60 ** 2)
     
 
+
+def welcome_cli():
+    print(
+        "Welcome. Please select:\n"
+        "1. Calculate sleep duration for now.\n"
+        "2. Slept significantly less or more last time? \n Reflect it in the log.\n"
+        "3. Reset configuration.\n"
+        "4. Exit.\n"
+        )
+    
+    num = input("Enter: ")
+
+    if num.isnumeric() and int(num) in range(1, 5):
+        num = int(num)
+        if num == 1:
+            pass
+        elif num == 2:
+            pass
+        elif num == 3:
+            create_config()
+        elif num == 4:
+            print("Bye")
+            exit()
+    else:
+        print("Invalid input")
+        exit()
+
+
+class Act(Enum):
+    asleep = auto()
+    awake = auto()
+
 def main():
-    process_clargs()
+    # welcome_cli()
+
+    # process_clargs()
 
     config = get_config()
-    history = get_history()
+    log = get_log()
 
     restPerDay = dt.timedelta(hours=config['hoursPlanned'], minutes=config['minutesPlanned'])
 
-    pprint(config)
-    pprint(history)
+    fraction = calculate_fraction_of_day(restPerDay)
+
+    print(f'{fraction=}')
+    print(f'{config=}')
+    print(f'{log=}')
+
 
 if __name__ == "__main__":
     main()
