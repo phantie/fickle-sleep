@@ -63,19 +63,19 @@ def get_config_data():
             print('Invalid input')
             exit()
 
-
+    print('? Planned rest per day')
     hours, minutes = input('\tHours: '), input('\tMinutes: ')
     hours, minutes = parse_time_period(hours, minutes)
     
-    data = Config(
+    config = Config(
         hoursPlanned=hours,
         minutesPlanned=minutes,
     )
 
-    return data
+    return config
 
 def create_config():
-    print(': SETUP\n\n? Planned rest per day')
+    print(': SETUP\n')
 
     config_data = asdict(get_config_data())
 
@@ -99,20 +99,26 @@ def get_config():
 
     return config
 
+def parse_row(row):
+    state, time = row.rstrip('\n').split(maxsplit=1)
+    for state_name, _state in Act.__members__.items():
+        if state_name == state:
+            state: Act = _state
+            break
+    else:
+        raise Exception("Not valid state", state)
+    
+    time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
+
+    return LogRow(state=state, time=time)
+
+def safe_parse_row(row):
+    try:
+        return parse_row(row)
+    except:
+        return ""
+
 def get_log():
-    def parse_row(row):
-        state, time = row.rstrip('\n').split(maxsplit=1)
-        for state_name, _state in Act.__members__.items():
-            if state_name == state:
-                state: Act = _state
-                break
-        else:
-            raise Exception("Not valid state", state)
-        
-        time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
-
-        return state, time
-
     if not path.exists(LOG_FILE__NAME):
         create_file(LOG_FILE__NAME)
 
@@ -121,18 +127,41 @@ def get_log():
 
     return log
 
+def repair_log():
+    assert path.exists(LOG_FILE__NAME)
+
+    repaired_rows = []
+
+    with open(LOG_FILE__NAME, "r") as log_file:
+        for row in log_file.readlines():
+            if parsed := safe_parse_row(row):
+                repaired_rows.append(parsed)
+
+    if len(repaired_rows) == 1 or len(repaired_rows) == 0:
+        repaired_rows = []
+    else:
+        for i, row in enumerate(repaired_rows):
+            if row.state is Act.asleep:
+                repaired_rows = repaired_rows[i:]
+                break
+        else:
+            repaired_rows = []
+
+    # result = []
+    # previous_state = Act.asleep
+    # for i in range(len(repaired_rows))[::2]:
+
+    rewrite_log(repaired_rows)
+
 
 # def process_clargs():
 #     if len(argv) > 1 and "reset-config" in argv:
 #         create_config()
 
-def duration_to_str(val: dt.timedelta):
-    assert val < aDay
-
-def duration_to_timedelta(val: str):
-    pass
 
 def calculate_fraction_of_day(var):
+    assert var < aDay
+
     return var.seconds / (24 * 60 ** 2)
 
 
@@ -142,7 +171,8 @@ def welcome_cli():
         "1. Calculate sleep duration for now.\n"
         "2. Slept significantly less or more last time? \n Reflect it in the log.\n"
         "3. Reset configuration.\n"
-        "4. Exit.\n"
+        "4. Repair log\n"
+        "5. Exit.\n"
         )
     
     num = input("Enter: ")
@@ -156,39 +186,35 @@ def welcome_cli():
         elif num == 3:
             create_config()
         elif num == 4:
+            repair_log()
+        elif num == 5:
             print("Bye")
             exit()
     else:
         print("Invalid input")
         exit()
 
-
-
-
-def write_log(log_row: LogRow):
+def append_to_log(log_row: LogRow):
     assert isinstance(log_row, LogRow)
 
     with open(LOG_FILE__NAME, 'a') as log_file:
         log_file.write(log_row.as_str())
 
+def rewrite_log(log):
+    with open(LOG_FILE__NAME, 'w') as log_file:
+        log_file.writelines(map(lambda self: self.as_str(), log))
+
+
 def get_asleep_awake(time: dt.timedelta):
     start = dt.datetime.now()
     end = start + time
-
-    # asleep = f"asleep {start.strftime(datetime_fmt)}\n"
-    # awake = f"awake {end.strftime(datetime_fmt)}\n"
-
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
-
-    # print(asleep)
-    # print(awake)
     return asleep, awake
 
 
-
 def main():
-    # welcome_cli()
+    welcome_cli()
 
     config = get_config()
     log = get_log()
@@ -203,8 +229,10 @@ def main():
 
     asleep, awake = get_asleep_awake(dt.timedelta(hours=8))
 
-    # write_log(asleep)
-    # write_log(awake)
+    # append_to_log(asleep)
+    # append_to_log(awake)
+
+    # rewrite_log(log)
 
 
 if __name__ == "__main__":
