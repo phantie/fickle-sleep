@@ -12,26 +12,12 @@ datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 CONFIG_FILE__NAME = "conf.toml"
 LOG_FILE__NAME = "log.txt"
 
-def create_file(filename):
-    with open(filename, "w"):
-        pass
 
-class classproperty(object):
-    def __init__(self, fget):
-        self.fget = fget
-    def __get__(self, owner_self, owner_cls):
-        return self.fget(owner_cls)
 
 @dataclass
 class Config:
     hoursPlanned: int
     minutesPlanned: int
-    
-    
-    @classproperty
-    def fields(cls):
-        return cls.__dataclass_fields__
-
 
 class Act(Enum):
     asleep = "asleep"
@@ -88,7 +74,7 @@ def get_config():
 
     _config = toml.load(CONFIG_FILE__NAME)
 
-    for field_name, field in Config.fields.items():
+    for field_name, field in Config.__dataclass_fields__.items():
         if not isinstance(_config.get(field_name), field.type):
             print('! Config file is corrupped')
             create_config()
@@ -118,6 +104,10 @@ def safe_parse_row(row):
     except:
         return ""
 
+def create_file(filename):
+    with open(filename, "w"):
+        pass
+
 def get_log():
     if not path.exists(LOG_FILE__NAME):
         create_file(LOG_FILE__NAME)
@@ -127,6 +117,9 @@ def get_log():
 
     return log
 
+
+### It won`t save againts drastical
+### manual log interuption. So don`t.
 def repair_log():
     assert path.exists(LOG_FILE__NAME)
 
@@ -137,19 +130,8 @@ def repair_log():
             if parsed := safe_parse_row(row):
                 repaired_rows.append(parsed)
 
-    if len(repaired_rows) == 1 or len(repaired_rows) == 0:
-        repaired_rows = []
-    else:
-        for i, row in enumerate(repaired_rows):
-            if row.state is Act.asleep:
-                repaired_rows = repaired_rows[i:]
-                break
-        else:
-            repaired_rows = []
-
-    # result = []
-    # previous_state = Act.asleep
-    # for i in range(len(repaired_rows))[::2]:
+    if len(repaired_rows) > 0 and repaired_rows[-1].state is not Act.awake:
+        del repaired_rows[-1]
 
     rewrite_log(repaired_rows)
 
@@ -211,6 +193,9 @@ def get_asleep_awake(time: dt.timedelta):
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
+
+def calculate_amount_of_sleep(log):
+    pass
 
 
 def main():
