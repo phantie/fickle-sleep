@@ -7,6 +7,7 @@ from enum import Enum, auto
 from dataclasses import dataclass, asdict
 
 aDay = dt.timedelta(days=1)
+datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 
 CONFIG_FILE__NAME = "conf.toml"
 LOG_FILE__NAME = "log.txt"
@@ -30,6 +31,10 @@ class Config:
     @classproperty
     def fields(cls):
         return cls.__dataclass_fields__
+
+class Act(Enum):
+    asleep = auto()
+    awake = auto()
 
 def get_config_data():
     def parse_time_period(hours, minutes):
@@ -81,21 +86,32 @@ def get_config():
             _config = toml.load(CONFIG_FILE__NAME)
             break
     
-    config = Config(
-        hoursPlanned=_config['hoursPlanned'],
-        minutesPlanned=_config['minutesPlanned'],
-        )
+    config = Config(**_config)
 
     return config
 
 def get_log():
-    
+    def parse_row(row):
+        state, time = row.rstrip('\n').split(maxsplit=1)
+        for state_name, _state in Act.__members__.items():
+            if state_name == state:
+                state: Act = _state
+                break
+        else:
+            raise Exception("Not valid state", state)
+        
+        time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
+
+        return state, time
 
     if not path.exists(LOG_FILE__NAME):
         create_file(LOG_FILE__NAME)
 
     with open(LOG_FILE__NAME, "r") as log_file:
-        return list(line.rstrip('\n') for line in log_file.readlines())
+        log = list(parse_row(row) for row in log_file.readlines())
+
+    return log
+
 
 # def process_clargs():
 #     if len(argv) > 1 and "reset-config" in argv:
@@ -109,7 +125,6 @@ def duration_to_timedelta(val: str):
 
 def calculate_fraction_of_day(var):
     return var.seconds / (24 * 60 ** 2)
-    
 
 
 def welcome_cli():
@@ -139,25 +154,41 @@ def welcome_cli():
         exit()
 
 
-class Act(Enum):
-    asleep = auto()
-    awake = auto()
+
+
+def write_log(data):
+    with open(LOG_FILE__NAME, 'a') as log_file:
+        log_file.writelines(data)
+
+def get_asleep_awake_data(time: dt.timedelta):
+    start = dt.datetime.now()
+    end = start + time
+
+    asleep = f"asleep {start.strftime(datetime_fmt)}\n"
+    awake = f"awake {end.strftime(datetime_fmt)}\n"
+
+    print(asleep)
+    print(awake)
+    return asleep, awake
+
+
 
 def main():
     # welcome_cli()
 
-    # process_clargs()
-
     config = get_config()
     log = get_log()
 
-    restPerDay = dt.timedelta(hours=config.hoursPlanned, minutes=config.minutesPlanned)
+    rest_per_day = dt.timedelta(hours=config.hoursPlanned, minutes=config.minutesPlanned)
 
-    fraction = calculate_fraction_of_day(restPerDay)
+    fraction = calculate_fraction_of_day(rest_per_day)
 
     print(f'{fraction=}')
     print(f'{config=}')
     print(f'{log=}')
+
+    data = get_asleep_awake_data(dt.timedelta(hours=8))
+    # write_log(data)
 
 
 if __name__ == "__main__":
