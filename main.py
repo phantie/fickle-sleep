@@ -32,9 +32,18 @@ class Config:
     def fields(cls):
         return cls.__dataclass_fields__
 
+
 class Act(Enum):
-    asleep = auto()
-    awake = auto()
+    asleep = "asleep"
+    awake = "awake"
+
+@dataclass
+class LogRow:
+    state: Act
+    time: dt.datetime
+
+    def as_str(self):
+        return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
 
 def get_config_data():
     def parse_time_period(hours, minutes):
@@ -156,19 +165,24 @@ def welcome_cli():
 
 
 
-def write_log(data):
-    with open(LOG_FILE__NAME, 'a') as log_file:
-        log_file.writelines(data)
+def write_log(log_row: LogRow):
+    assert isinstance(log_row, LogRow)
 
-def get_asleep_awake_data(time: dt.timedelta):
+    with open(LOG_FILE__NAME, 'a') as log_file:
+        log_file.write(log_row.as_str())
+
+def get_asleep_awake(time: dt.timedelta):
     start = dt.datetime.now()
     end = start + time
 
-    asleep = f"asleep {start.strftime(datetime_fmt)}\n"
-    awake = f"awake {end.strftime(datetime_fmt)}\n"
+    # asleep = f"asleep {start.strftime(datetime_fmt)}\n"
+    # awake = f"awake {end.strftime(datetime_fmt)}\n"
 
-    print(asleep)
-    print(awake)
+    asleep = LogRow(state=Act.asleep, time=start)
+    awake = LogRow(state=Act.awake, time=end)
+
+    # print(asleep)
+    # print(awake)
     return asleep, awake
 
 
@@ -187,8 +201,10 @@ def main():
     print(f'{config=}')
     print(f'{log=}')
 
-    data = get_asleep_awake_data(dt.timedelta(hours=8))
-    # write_log(data)
+    asleep, awake = get_asleep_awake(dt.timedelta(hours=8))
+
+    # write_log(asleep)
+    # write_log(awake)
 
 
 if __name__ == "__main__":
