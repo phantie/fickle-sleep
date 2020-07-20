@@ -13,11 +13,9 @@ CONFIG_FILE__NAME = "conf.toml"
 LOG_FILE__NAME = "log.txt"
 
 
-
 @dataclass
 class Config:
-    hoursPlanned: int
-    minutesPlanned: int
+    time_planned: int #seconds
 
 class Act(Enum):
     asleep = "asleep"
@@ -42,20 +40,22 @@ def get_config_data():
             minutes %= 60
 
             assert validate(hours, 24) and validate(minutes, 60)
-            assert dt.timedelta(hours=hours, minutes=minutes) < aDay
-            return hours, minutes
 
-        except (ValueError, AssertionError):
+            if (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay:
+                return tp
+            else:
+                raise OverflowError
+
+        except (ValueError, OverflowError, AssertionError):
             print('Invalid input')
             exit()
 
     print('? Planned rest per day')
     hours, minutes = input('\tHours: '), input('\tMinutes: ')
-    hours, minutes = parse_time_period(hours, minutes)
-    
+    tp = parse_time_period(hours, minutes)
+
     config = Config(
-        hoursPlanned=hours,
-        minutesPlanned=minutes,
+        time_planned = tp.seconds,
     )
 
     return config
@@ -69,19 +69,24 @@ def create_config():
         toml.dump(config_data, cfile)
 
 def get_config():
+    def load_config():
+        return toml.load(CONFIG_FILE__NAME)
+
     if not path.exists(CONFIG_FILE__NAME):
         create_config()
 
-    _config = toml.load(CONFIG_FILE__NAME)
+    _config = load_config()
 
     for field_name, field in Config.__dataclass_fields__.items():
         if not isinstance(_config.get(field_name), field.type):
             print('! Config file is corrupped')
             create_config()
-            _config = toml.load(CONFIG_FILE__NAME)
+            _config = load_config()
             break
     
     config = Config(**_config)
+
+    config.time_planned = dt.timedelta(seconds=config.time_planned)
 
     return config
 
@@ -204,7 +209,7 @@ def main():
     config = get_config()
     log = get_log()
 
-    rest_per_day = dt.timedelta(hours=config.hoursPlanned, minutes=config.minutesPlanned)
+    rest_per_day = config.time_planned
 
     fraction = calculate_fraction_of_day(rest_per_day)
 
@@ -212,7 +217,7 @@ def main():
     print(f'{config=}')
     print(f'{log=}')
 
-    asleep, awake = get_asleep_awake(dt.timedelta(hours=8))
+    asleep, awake = get_asleep_awake(rest_per_day)
 
     # append_to_log(asleep)
     # append_to_log(awake)
