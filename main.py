@@ -5,19 +5,27 @@ from os import path
 # from sys import argv
 from enum import Enum, auto
 from dataclasses import dataclass, asdict
+from abc import ABC, abstractmethod
 
 aDay = dt.timedelta(days=1)
 now = dt.datetime.now
 
 datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 
-CONFIG_FILE__NAME = "conf.toml"
-LOG_FILE__NAME = "log.txt"
+class File(ABC):
+    def exists(self):
+        return path.exists(self.FILE__NAME)
+
+    @abstractmethod
+    def load(self):
+        pass
 
 
-@dataclass
-class Config:
-    time_planned: int #seconds
+class classproperty(object):
+    def __init__(self, fget):
+        self.fget = fget
+    def __get__(self, owner_self, owner_cls):
+        return self.fget(owner_cls)
 
 class Act(Enum):
     asleep = "asleep"
@@ -31,112 +39,156 @@ class LogRow:
     def as_str(self):
         return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
 
-def get_config_data():
-    def parse_time_period(hours, minutes):
-        def validate(duration, upper_bound, lower_bound = 0):
-            return lower_bound <= duration <= upper_bound
+    @classmethod
+    def parse(cls, row):
+        state, time = row.rstrip('\n').split(maxsplit=1)
+        for state_name, _state in Act.__members__.items():
+            if state_name == state:
+                state: Act = _state
+                break
+        else:
+            raise Exception("Invalid state", state)
+        
+        time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
 
+        return LogRow(state=state, time=time)
+
+    @classmethod
+    def safe_parse(cls, row):
         try:
-            hours, minutes = int(hours), int(minutes)
-            hours += minutes // 60
-            minutes %= 60
+            return cls.parse_row(row)
+        except:
+            return ""
 
-            assert validate(hours, 24) and validate(minutes, 60)
-            assert (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay
+@dataclass
+class Config(File):
+    time_planned: int #seconds
 
-            return tp
+    FILE__NAME = "conf.toml"
 
-        except (ValueError, AssertionError):
-            print('Invalid input')
-            exit()
+    def __init__(self, time_planned: int = 0):
+        data = self.get()
 
-    print('? Planned rest per day')
-    hours, minutes = input('\tHours: '), input('\tMinutes: ')
-    tp = parse_time_period(hours, minutes)
+        self.time_planned = data['time_planned']
 
-    config = Config(
-        time_planned = tp.seconds,
-    )
+    def load(self):
+        assert self.exists()
+        return toml.load(self.FILE__NAME)
 
-    return config
+    @classmethod
+    def receive_data(cls):
+        def parse_time_period(hours, minutes):
+            def validate(duration, upper_bound, lower_bound = 0):
+                return lower_bound <= duration <= upper_bound
 
-def create_config():
-    print(': SETUP\n')
+            try:
+                hours, minutes = int(hours), int(minutes)
+                hours += minutes // 60
+                minutes %= 60
 
-    config_data = asdict(get_config_data())
+                assert validate(hours, 24) and validate(minutes, 60)
+                assert (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay
 
-    with open(CONFIG_FILE__NAME, 'w') as cfile:
-        toml.dump(config_data, cfile)
+                return tp
 
-def get_config():
-    def load_config():
-        return toml.load(CONFIG_FILE__NAME)
+            except (ValueError, AssertionError):
+                print('Invalid input')
+                exit()
 
-    if not path.exists(CONFIG_FILE__NAME):
-        create_config()
+        print('? Planned rest per day')
+        hours, minutes = input('\tHours: '), input('\tMinutes: ')
+        tp = parse_time_period(hours, minutes)
 
-    _config = load_config()
+        data = dict(time_planned = tp.seconds)
 
-    for field_name, field in Config.__dataclass_fields__.items():
-        if not isinstance(_config.get(field_name), field.type):
-            print('! Config file is corrupped')
-            create_config()
-            _config = load_config()
-            break
-    
-    config = Config(**_config)
+        return data
 
-    return config
+    def create(self):
+        print(': SETUP\n')
 
-def parse_row(row):
-    state, time = row.rstrip('\n').split(maxsplit=1)
-    for state_name, _state in Act.__members__.items():
-        if state_name == state:
-            state: Act = _state
-            break
-    else:
-        raise Exception("Invalid state", state)
-    
-    time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
+        data = self.receive_data()
 
-    return LogRow(state=state, time=time)
+        with open(self.FILE__NAME, 'w') as conf_file:
+            toml.dump(data, conf_file)
 
-def safe_parse_row(row):
-    try:
-        return parse_row(row)
-    except:
-        return ""
+
+    def get(self):
+
+        if not self.exists():
+            self.create()
+
+        data = self.load()
+
+        for field_name, field in self.__dataclass_fields__.items():
+            if not isinstance(data.get(field_name), field.type):
+                print('! Config file is corrupped')
+                self.create()
+                data = self.load()
+                break
+
+        return data
+
+class Log(File):
+    FILE__NAME = "log.txt"
+    _content = None
+
+    def __init__(self):
+        self.content
+
+    def load(self):
+        with open(self.FILE__NAME, "r") as log_file:
+            return log_file.readlines()
+
+    @classproperty
+    def content(self):
+        if self._content is None:
+            if not path.exists(self.FILE__NAME):
+                create_file(self.FILE__NAME)
+
+            with open(self.FILE__NAME, "r") as log_file:
+                log = list(LogRow.parse(row) for row in self.load(self))
+
+            self._content = log
+
+        return self._content
+
+    def append(self, log_row: LogRow):
+        assert isinstance(log_row, LogRow)
+        self._content.append(log_row)
+
+        with open(self.FILE__NAME, 'a') as log_file:
+            log_file.write(log_row.as_str())
+
+    def rewrite(self, new_data = None):
+        new_data = new_data or self.content
+        with open(self.FILE__NAME, 'w') as log_file:
+            log_file.writelines(map(lambda row: row.as_str(), new_data))
+
+
+    ### It won`t save againts drastical
+    ### manual log interruption. So don`t.
+    def repair(self):
+        assert self.exists()
+
+        repaired_records = []
+
+        with open(self.FILE__NAME, "r") as log_file:
+            for row in log_file.readlines():
+                if record := LogRow.safe_parse(row):
+                    repaired_records.append(record)
+
+        if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
+            del repaired_records[-1]
+
+        self.rewrite(repaired_records)
+
+
+
 
 def create_file(filename):
     with open(filename, "w"):
         pass
 
-def get_log():
-    if not path.exists(LOG_FILE__NAME):
-        create_file(LOG_FILE__NAME)
-
-    with open(LOG_FILE__NAME, "r") as log_file:
-        log = list(parse_row(row) for row in log_file.readlines())
-
-    return log
-
-
-### It won`t save againts drastical
-### manual log interruption. So don`t.
-def repair_log():
-    assert path.exists(LOG_FILE__NAME)
-
-    repaired_records = []
-
-    with open(LOG_FILE__NAME, "r") as log_file:
-        for row in log_file.readlines():
-            if record := safe_parse_row(row):
-                repaired_records.append(record)
-
-    if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
-        del repaired_records[-1]
-
-    rewrite_log(repaired_records)
 
 
 # def process_clargs():
@@ -181,9 +233,9 @@ def welcome_cli():
         elif num == 2:
             pass
         elif num == 3:
-            create_config()
+            config.create()
         elif num == 4:
-            repair_log()
+            log.repair()
         elif num == 5:
             print("Bye")
             exit()
@@ -191,15 +243,6 @@ def welcome_cli():
         print("Invalid input")
         exit()
 
-def append_to_log(log_row: LogRow):
-    assert isinstance(log_row, LogRow)
-
-    with open(LOG_FILE__NAME, 'a') as log_file:
-        log_file.write(log_row.as_str())
-
-def rewrite_log(log):
-    with open(LOG_FILE__NAME, 'w') as log_file:
-        log_file.writelines(map(lambda self: self.as_str(), log))
 
 
 def get_asleep_awake(time: dt.timedelta):
@@ -209,7 +252,7 @@ def get_asleep_awake(time: dt.timedelta):
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
 
-def calculate_amount_of_sleep(log, take_by = .4 * aDay):
+def calculate_amount_of_sleep(log, take_by = 1.4 * aDay):
     def get_latest_records():
         start_moment = now() - take_by
         for i, record in enumerate(log):
@@ -229,7 +272,6 @@ def calculate_amount_of_sleep(log, take_by = .4 * aDay):
 
     def get_latest_sleep_amount(records):
         total_sleep = dt.timedelta()
-        # print(total_sleep)
         for i in range(0, len(records), 2):
             total_sleep += records[i+1].time - records[i].time
 
@@ -242,27 +284,26 @@ def calculate_amount_of_sleep(log, take_by = .4 * aDay):
 
 
 def main():
-    # welcome_cli()
+    welcome_cli()
 
-    config = get_config()
-    log = get_log()
+    config = Config()
+    log = Log()
 
     rest_per_day = dt.timedelta(seconds=config.time_planned)
 
     fraction = fraction_of(rest_per_day, aDay)
 
-    print(f'{fraction=}')
+    # print(f'{fraction=}')
     # print(f'{config=}')
     # print(f'{log=}')
 
     asleep, awake = get_asleep_awake(rest_per_day)
+    calculate_amount_of_sleep(log.content)
 
-    calculate_amount_of_sleep(log)
+    # log.append(asleep)
+    # log.append(awake)
 
-    # append_to_log(asleep)
-    # append_to_log(awake)
-
-    # rewrite_log(log)
+    # log.rewrite()
 
 
 if __name__ == "__main__":
