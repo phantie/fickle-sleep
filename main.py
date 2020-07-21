@@ -56,9 +56,10 @@ class LogRow:
     @classmethod
     def safe_parse(cls, row):
         try:
-            return cls.parse_row(row)
+            return cls.parse(row)
         except:
             return ""
+            # raise
 
 @dataclass
 class Config(File):
@@ -70,6 +71,7 @@ class Config(File):
         data = self.get()
 
         self.time_planned = data['time_planned']
+        self.rest_per_day = dt.timedelta(seconds=self.time_planned)
 
     def load(self):
         assert self.exists()
@@ -78,7 +80,7 @@ class Config(File):
     @classmethod
     def receive_data(cls):
         def parse_time_period(hours, minutes):
-            def validate(duration, upper_bound, lower_bound = 0):
+            def within_bounds(duration, upper_bound, lower_bound = 0):
                 return lower_bound <= duration <= upper_bound
 
             try:
@@ -86,7 +88,7 @@ class Config(File):
                 hours += minutes // 60
                 minutes %= 60
 
-                assert validate(hours, 24) and validate(minutes, 60)
+                assert within_bounds(hours, 24) and within_bounds(minutes, 60)
                 assert (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay
 
                 return tp
@@ -146,7 +148,22 @@ class Log(File):
                 create_file(self.FILE__NAME)
 
             with open(self.FILE__NAME, "r") as log_file:
-                log = list(LogRow.parse(row) for row in self.load(self))
+                try:
+                    log = list(LogRow.parse(row) for row in self.load(self))
+                except:
+                    print("! Log seems to be corrupted")
+                    print("? Try to repair automatically")
+                    while True: 
+                        inp = input("{y, n} ")
+                        if inp == "y":
+                            self.repair(self)
+                            log = self._content
+                            print("! Considering data was corrupted, first\n"
+                                  "  calcultations may not be accurate.\n")
+                            break
+                        elif inp == "n": exit()
+                        else: continue
+
 
             self._content = log
 
@@ -159,29 +176,32 @@ class Log(File):
         with open(self.FILE__NAME, 'a') as log_file:
             log_file.write(log_row.as_str())
 
-    def rewrite(self, new_data = None):
-        new_data = new_data or self.content
+    def sync(self):
+        assert hasattr(self, "content")
+
         with open(self.FILE__NAME, 'w') as log_file:
-            log_file.writelines(map(lambda row: row.as_str(), new_data))
+            log_file.writelines(map(lambda row: row.as_str(), self.content))
 
 
     ### It won`t save againts drastical
     ### manual log interruption. So don`t.
     def repair(self):
-        assert self.exists()
+        assert self.exists(self)
 
         repaired_records = []
 
         with open(self.FILE__NAME, "r") as log_file:
             for row in log_file.readlines():
                 if record := LogRow.safe_parse(row):
+                    print(record)
                     repaired_records.append(record)
 
         if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
             del repaired_records[-1]
-
-        self.rewrite(repaired_records)
-
+        
+        self._content = repaired_records
+        
+        self.sync(self)
 
 
 
@@ -194,12 +214,6 @@ def create_file(filename):
 # def process_clargs():
 #     if len(argv) > 1 and "reset-config" in argv:
 #         create_config()
-
-
-def fraction_of(divisible, divider):
-    assert divisible <= divider
-
-    return divisible / divider
 
 def welcoming():
     this_hour = now().hour
@@ -215,38 +229,48 @@ def welcoming():
 
 
 
-def welcome_cli(config, log):
+def cli(config, log):
     print(
         f"Good {welcoming()}. Please select:\n"
         "1. Calculate sleep duration.\n"
         "2. Correct last sleep session.\n"
         "3. Reset configuration.\n"
-        "4. Repair log\n"
-        "5. Exit.\n"
+        "4. Exit.\n"
         )
     
     num = input("Enter: ")
 
-    if num.isnumeric() and (num := int(num)) in range(1, 6):
+    if num.isnumeric() and (num := int(num)) in range(1, 5):
         if num == 1:
-            pass
+            asleep, awake = get_asleep_awake(config.rest_per_day)
+            calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
+
+            log.append(asleep)
+            log.append(awake)
+            
+            print(calculated_amount)
+
         elif num == 2:
             pass
+
         elif num == 3:
             config.create()
+
         elif num == 4:
-            log.repair()
-        elif num == 5:
             print("Bye")
             exit()
     else:
         print("Invalid input")
         exit()
 
+def yield_datetime(dt: dt.datetime):
+    def wrap():
+        return dt
 
+    return wrap
 
-def get_asleep_awake(time: dt.timedelta):
-    start = now()
+def get_asleep_awake(time: dt.timedelta, start: callable = now):
+    start = start()
     end = start + time
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
@@ -280,8 +304,7 @@ def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
 
     latest_sleep_amount = get_latest_sleep_amount(latest_records)
 
-    # result = (latest_sleep_amount - rest_per_day * (take_by/aDay)) / (rest_per_day - aDay)
-    result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - fraction_of(rest_per_day, aDay))
+    result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - (rest_per_day / aDay))
 
     return result
 
@@ -289,23 +312,22 @@ def main():
     config = Config()
     log = Log()
 
-    welcome_cli(config, log)
+    cli(config, log)
 
-    rest_per_day = dt.timedelta(seconds=config.time_planned)
-
-    fraction = fraction_of(rest_per_day, aDay)
+    # fraction = (config.rest_per_day / aDay)
 
     # print(f'{fraction=}')
     # print(f'{config=}')
     # print(f'{log=}')
 
-    asleep, awake = get_asleep_awake(rest_per_day)
-    calculated_amount = calculate_amount_of_sleep(log.content, rest_per_day)
-    print(calculated_amount)
+    # asleep, awake = get_asleep_awake(config.rest_per_day)
+    # calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
+    # print(calculated_amount)
+
     # log.append(asleep)
     # log.append(awake)
 
-    # log.rewrite()
+    # log.sync()
 
 
 if __name__ == "__main__":
