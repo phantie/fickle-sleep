@@ -93,11 +93,10 @@ class Config(File):
                 return tp
 
             except (ValueError, AssertionError):
-                print('Invalid input')
-                exit()
+                exit('Invalid input')
 
         print('? Planned rest per day')
-        hours, minutes = input('\tHours: '), input('\tMinutes: ')
+        hours, minutes = input_hours_minutes()
         tp = parse_time_period(hours, minutes)
 
         data = dict(time_planned = tp.seconds)
@@ -112,6 +111,8 @@ class Config(File):
         with open(self.FILE__NAME, 'w') as conf_file:
             toml.dump(data, conf_file)
 
+    def update(self):
+        self.create()
 
     def get(self):
 
@@ -123,7 +124,7 @@ class Config(File):
         for field_name, field in self.__dataclass_fields__.items():
             if not isinstance(data.get(field_name), field.type):
                 print('! Config file is corrupped')
-                self.create()
+                self.update()
                 data = self.load()
                 break
 
@@ -199,11 +200,16 @@ class Log(File):
         
         self.sync(self)
 
+    def alter_last_session(self):
+        pass
 
 
 def create_file(filename):
     with open(filename, "w"):
         pass
+
+def input_hours_minutes() -> (str, str):
+    return input('\tHours: '), input('\tMinutes: ')
 
 # def process_clargs():
 #     if len(argv) > 1 and "reset-config" in argv:
@@ -219,7 +225,7 @@ class Clock:
         else:
             return self.hours[start:] + self.hours[:end+1]
 
-def welcoming():
+def part_of_day():
     this_hour = now().hour
 
     if this_hour in Clock.between(4, 11):
@@ -235,7 +241,7 @@ def welcoming():
 
 def cli(config, log):
     print(
-        f"Good {welcoming()}. Please select:\n"
+        f"Good {part_of_day()}. Please select:\n"
         "1. Calculate sleep duration.\n"
         "2. Correct last sleep session.\n"
         "3. Reset configuration.\n"
@@ -255,17 +261,16 @@ def cli(config, log):
             print(calculated_amount)
 
         elif num == 2:
-            pass
+            print("? How much did you sleep last time")
+            hours, minutes = input_hours_minutes()
 
         elif num == 3:
-            config.create()
+            config.update()
 
         elif num == 4:
-            print("Bye")
-            exit()
+            exit("Bye")
     else:
-        print("Invalid input")
-        exit()
+        exit("Invalid input")
 
 def yield_datetime(dt: dt.datetime):
     def wrap():
@@ -280,11 +285,11 @@ def get_asleep_awake(time: dt.timedelta, start: callable = now):
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
 
-def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
+def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
     
     def get_latest_records(log):
-        nonlocal take_by
-        start_moment = now() - take_by
+        nonlocal time_limiter
+        start_moment = now() - time_limiter
 
         if log:
             for i, record in enumerate(log):
@@ -294,7 +299,7 @@ def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
                     elif record.state is Act.asleep:
                         log = log[i:]
 
-                    take_by = start_moment - log[0].time
+                    time_limiter = start_moment - log[0].time
                     break
         return log
 
@@ -308,7 +313,7 @@ def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
     if latest_records := get_latest_records(log):
         latest_sleep_amount = get_latest_sleep_amount(latest_records)
 
-        result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - (rest_per_day / aDay))
+        result = (latest_sleep_amount + rest_per_day * (time_limiter / aDay)) / (1 - (rest_per_day / aDay))
     else:
         result = rest_per_day
 
