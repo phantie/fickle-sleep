@@ -21,7 +21,7 @@ class File(ABC):
         pass
 
 
-class classproperty(object):
+class classproperty:
     def __init__(self, fget):
         self.fget = fget
     def __get__(self, owner_self, owner_cls):
@@ -59,7 +59,6 @@ class LogRow:
             return cls.parse(row)
         except:
             return ""
-            # raise
 
 @dataclass
 class Config(File):
@@ -157,15 +156,13 @@ class Log(File):
                         inp = input("{y, n} ")
                         if inp == "y":
                             self.repair(self)
-                            log = self._content
                             print("! Considering data was corrupted, first\n"
                                   "  calcultations may not be accurate.\n")
                             break
                         elif inp == "n": exit()
                         else: continue
-
-
-            self._content = log
+                else:
+                    self._content = log
 
         return self._content
 
@@ -193,7 +190,6 @@ class Log(File):
         with open(self.FILE__NAME, "r") as log_file:
             for row in log_file.readlines():
                 if record := LogRow.safe_parse(row):
-                    print(record)
                     repaired_records.append(record)
 
         if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
@@ -209,22 +205,30 @@ def create_file(filename):
     with open(filename, "w"):
         pass
 
-
-
 # def process_clargs():
 #     if len(argv) > 1 and "reset-config" in argv:
 #         create_config()
 
+class Clock:
+    hours = list(range(0, 25))
+
+    @classmethod
+    def between(self, start, end):
+        if start <= end:
+            return self.hours[start:end+1]
+        else:
+            return self.hours[start:] + self.hours[:end+1]
+
 def welcoming():
     this_hour = now().hour
 
-    if 4 <= this_hour <= 11:
+    if this_hour in Clock.between(4, 11):
         return "morning"
-    elif 12 <= this_hour <= 16:
+    elif this_hour in Clock.between(12, 16):
         return "afternoon"
-    elif 17 <= this_hour <= 20:
+    elif this_hour in Clock.between(17, 20):
         return "evening"
-    elif 21 <= this_hour <= 3:
+    elif this_hour in Clock.between(21, 3):
         return "night"
 
 
@@ -245,8 +249,8 @@ def cli(config, log):
             asleep, awake = get_asleep_awake(config.rest_per_day)
             calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
 
-            log.append(asleep)
-            log.append(awake)
+            # log.append(asleep)
+            # log.append(awake)
             
             print(calculated_amount)
 
@@ -278,20 +282,21 @@ def get_asleep_awake(time: dt.timedelta, start: callable = now):
 
 def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
     
-    def get_latest_records():
+    def get_latest_records(log):
         nonlocal take_by
         start_moment = now() - take_by
-        for i, record in enumerate(log):
-            if record.time >= start_moment:
-                if record.state is Act.awake:
-                    latest_records = log[i-1:]
-                elif record.state is Act.asleep:
-                    latest_records = log[i:]
 
-                take_by = start_moment - log[0].time
-                break
+        if log:
+            for i, record in enumerate(log):
+                if record.time >= start_moment:
+                    if record.state is Act.awake:
+                        log = log[i-1:]
+                    elif record.state is Act.asleep:
+                        log = log[i:]
 
-        return latest_records
+                    take_by = start_moment - log[0].time
+                    break
+        return log
 
     def get_latest_sleep_amount(records):
         total_sleep = dt.timedelta()
@@ -300,11 +305,12 @@ def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
 
         return total_sleep
 
-    latest_records = get_latest_records()
+    if latest_records := get_latest_records(log):
+        latest_sleep_amount = get_latest_sleep_amount(latest_records)
 
-    latest_sleep_amount = get_latest_sleep_amount(latest_records)
-
-    result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - (rest_per_day / aDay))
+        result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - (rest_per_day / aDay))
+    else:
+        result = rest_per_day
 
     return result
 
