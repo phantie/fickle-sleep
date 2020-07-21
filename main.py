@@ -62,15 +62,14 @@ class LogRow:
 
 @dataclass
 class Config(File):
-    time_planned: int #seconds
+    rest_per_day: int #seconds
 
     FILE__NAME = "conf.toml"
 
     def __init__(self):
-        data = self.get()
+        parsed_config_file_data = self.get()
 
-        self.time_planned = data['time_planned']
-        self.rest_per_day = dt.timedelta(seconds=self.time_planned)
+        self.rest_per_day = dt.timedelta(seconds=parsed_config_file_data['rest_per_day'])
 
     def load(self):
         assert self.exists()
@@ -99,7 +98,7 @@ class Config(File):
         hours, minutes = input_hours_minutes()
         tp = parse_time_period(hours, minutes)
 
-        data = dict(time_planned = tp.seconds)
+        data = dict(rest_per_day = tp.seconds)
 
         return data
 
@@ -244,7 +243,7 @@ def cli(config, log):
         f"Good {part_of_day()}. Please select:\n"
         "1. Calculate sleep duration.\n"
         "2. Correct last sleep session.\n"
-        "3. Reset configuration.\n"
+        "3. Update configuration.\n"
         "4. Exit.\n"
         )
     
