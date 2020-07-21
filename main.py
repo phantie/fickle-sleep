@@ -40,13 +40,11 @@ def get_config_data():
             minutes %= 60
 
             assert validate(hours, 24) and validate(minutes, 60)
+            assert (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay
 
-            if (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay:
-                return tp
-            else:
-                raise OverflowError
+            return tp
 
-        except (ValueError, OverflowError, AssertionError):
+        except (ValueError, AssertionError):
             print('Invalid input')
             exit()
 
@@ -86,8 +84,6 @@ def get_config():
     
     config = Config(**_config)
 
-    config.time_planned = dt.timedelta(seconds=config.time_planned)
-
     return config
 
 def parse_row(row):
@@ -97,7 +93,7 @@ def parse_row(row):
             state: Act = _state
             break
     else:
-        raise Exception("Not valid state", state)
+        raise Exception("Invalid state", state)
     
     time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
 
@@ -124,7 +120,7 @@ def get_log():
 
 
 ### It won`t save againts drastical
-### manual log interuption. So don`t.
+### manual log interruption. So don`t.
 def repair_log():
     assert path.exists(LOG_FILE__NAME)
 
@@ -151,12 +147,25 @@ def calculate_fraction_of_day(var):
 
     return var.seconds / (24 * 60 ** 2)
 
+def welcoming():
+    this_hour = dt.datetime.now().hour
+
+    if 4 <= this_hour <= 11:
+        return "morning"
+    elif 12 <= this_hour <= 16:
+        return "afternoon"
+    elif 17 <= this_hour <= 20:
+        return "evening"
+    elif 21 <= this_hour <= 3:
+        return "night"
+
+
 
 def welcome_cli():
     print(
-        "Welcome. Please select:\n"
-        "1. Calculate sleep duration for now.\n"
-        "2. Slept significantly less or more last time? \n Reflect it in the log.\n"
+        f"Good {welcoming()}. Please select:\n"
+        "1. Calculate sleep duration.\n"
+        "2. Correct last sleep session.\n"
         "3. Reset configuration.\n"
         "4. Repair log\n"
         "5. Exit.\n"
@@ -164,8 +173,7 @@ def welcome_cli():
     
     num = input("Enter: ")
 
-    if num.isnumeric() and int(num) in range(1, 5):
-        num = int(num)
+    if num.isnumeric() and (num := int(num)) in range(1, 6):
         if num == 1:
             pass
         elif num == 2:
@@ -209,7 +217,7 @@ def main():
     config = get_config()
     log = get_log()
 
-    rest_per_day = config.time_planned
+    rest_per_day = dt.timedelta(seconds=config.time_planned)
 
     fraction = calculate_fraction_of_day(rest_per_day)
 
