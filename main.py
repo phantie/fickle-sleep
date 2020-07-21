@@ -66,7 +66,7 @@ class Config(File):
 
     FILE__NAME = "conf.toml"
 
-    def __init__(self, time_planned: int = 0):
+    def __init__(self):
         data = self.get()
 
         self.time_planned = data['time_planned']
@@ -215,7 +215,7 @@ def welcoming():
 
 
 
-def welcome_cli():
+def welcome_cli(config, log):
     print(
         f"Good {welcoming()}. Please select:\n"
         "1. Calculate sleep duration.\n"
@@ -252,8 +252,10 @@ def get_asleep_awake(time: dt.timedelta):
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
 
-def calculate_amount_of_sleep(log, take_by = 1.4 * aDay):
+def calculate_amount_of_sleep(log, rest_per_day, take_by = 1.4 * aDay):
+    
     def get_latest_records():
+        nonlocal take_by
         start_moment = now() - take_by
         for i, record in enumerate(log):
             if record.time >= start_moment:
@@ -262,11 +264,8 @@ def calculate_amount_of_sleep(log, take_by = 1.4 * aDay):
                 elif record.state is Act.asleep:
                     latest_records = log[i:]
 
-                # take_by = start_moment - log[i-1].time
+                take_by = start_moment - log[0].time
                 break
-
-        for record in latest_records:
-            print(record)
 
         return latest_records
 
@@ -275,19 +274,22 @@ def calculate_amount_of_sleep(log, take_by = 1.4 * aDay):
         for i in range(0, len(records), 2):
             total_sleep += records[i+1].time - records[i].time
 
-        print(total_sleep)
+        return total_sleep
 
-    take_by = take_by
     latest_records = get_latest_records()
+
     latest_sleep_amount = get_latest_sleep_amount(latest_records)
 
+    # result = (latest_sleep_amount - rest_per_day * (take_by/aDay)) / (rest_per_day - aDay)
+    result = (latest_sleep_amount + rest_per_day * (take_by / aDay)) / (1 - fraction_of(rest_per_day, aDay))
 
+    return result
 
 def main():
-    welcome_cli()
-
     config = Config()
     log = Log()
+
+    welcome_cli(config, log)
 
     rest_per_day = dt.timedelta(seconds=config.time_planned)
 
@@ -298,8 +300,8 @@ def main():
     # print(f'{log=}')
 
     asleep, awake = get_asleep_awake(rest_per_day)
-    calculate_amount_of_sleep(log.content)
-
+    calculated_amount = calculate_amount_of_sleep(log.content, rest_per_day)
+    print(calculated_amount)
     # log.append(asleep)
     # log.append(awake)
 
