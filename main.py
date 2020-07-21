@@ -7,6 +7,8 @@ from enum import Enum, auto
 from dataclasses import dataclass, asdict
 
 aDay = dt.timedelta(days=1)
+now = dt.datetime.now
+
 datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 
 CONFIG_FILE__NAME = "conf.toml"
@@ -124,17 +126,17 @@ def get_log():
 def repair_log():
     assert path.exists(LOG_FILE__NAME)
 
-    repaired_rows = []
+    repaired_records = []
 
     with open(LOG_FILE__NAME, "r") as log_file:
         for row in log_file.readlines():
-            if parsed := safe_parse_row(row):
-                repaired_rows.append(parsed)
+            if record := safe_parse_row(row):
+                repaired_records.append(record)
 
-    if len(repaired_rows) > 0 and repaired_rows[-1].state is not Act.awake:
-        del repaired_rows[-1]
+    if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
+        del repaired_records[-1]
 
-    rewrite_log(repaired_rows)
+    rewrite_log(repaired_records)
 
 
 # def process_clargs():
@@ -142,13 +144,13 @@ def repair_log():
 #         create_config()
 
 
-def calculate_fraction_of_day(var):
-    assert var < aDay
+def fraction_of(divisible, divider):
+    assert divisible <= divider
 
-    return var.seconds / (24 * 60 ** 2)
+    return divisible / divider
 
 def welcoming():
-    this_hour = dt.datetime.now().hour
+    this_hour = now().hour
 
     if 4 <= this_hour <= 11:
         return "morning"
@@ -201,31 +203,61 @@ def rewrite_log(log):
 
 
 def get_asleep_awake(time: dt.timedelta):
-    start = dt.datetime.now()
+    start = now()
     end = start + time
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
 
-def calculate_amount_of_sleep(log):
-    pass
+def calculate_amount_of_sleep(log, take_by = .4 * aDay):
+    def get_latest_records():
+        start_moment = now() - take_by
+        for i, record in enumerate(log):
+            if record.time >= start_moment:
+                if record.state is Act.awake:
+                    latest_records = log[i-1:]
+                elif record.state is Act.asleep:
+                    latest_records = log[i:]
+
+                # take_by = start_moment - log[i-1].time
+                break
+
+        for record in latest_records:
+            print(record)
+
+        return latest_records
+
+    def get_latest_sleep_amount(records):
+        total_sleep = dt.timedelta()
+        # print(total_sleep)
+        for i in range(0, len(records), 2):
+            total_sleep += records[i+1].time - records[i].time
+
+        print(total_sleep)
+
+    take_by = take_by
+    latest_records = get_latest_records()
+    latest_sleep_amount = get_latest_sleep_amount(latest_records)
+
 
 
 def main():
-    welcome_cli()
+    # welcome_cli()
 
     config = get_config()
     log = get_log()
 
     rest_per_day = dt.timedelta(seconds=config.time_planned)
 
-    fraction = calculate_fraction_of_day(rest_per_day)
+    fraction = fraction_of(rest_per_day, aDay)
 
     print(f'{fraction=}')
-    print(f'{config=}')
-    print(f'{log=}')
+    # print(f'{config=}')
+    # print(f'{log=}')
 
     asleep, awake = get_asleep_awake(rest_per_day)
+
+    calculate_amount_of_sleep(log)
 
     # append_to_log(asleep)
     # append_to_log(awake)
