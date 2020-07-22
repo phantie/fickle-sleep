@@ -1,11 +1,10 @@
 from datetime import datetime as dt, timedelta
-import toml
-from pprint import pprint
-from os import path
-from enum import Enum, auto
-from dataclasses import dataclass, asdict
-from abc import ABC, abstractmethod
 from contextlib import contextmanager
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import Enum
+from os import path
+import toml
 
 ALTER_LOG = False
 
@@ -165,6 +164,9 @@ class Log(File):
     def get_content(self):
         try:
             self.content = list(LogRow.parse(row) for row in self.load())
+
+            if self.content:
+                assert self.content[-1].state is Act.awake
         except:
             print("! Log seems to be corrupted")
             print("? Try to repair automatically")
@@ -297,9 +299,9 @@ def yield_datetime(dt: dt):
 
     return wrap
 
-def get_asleep_awake(time: timedelta, start: callable = now):
+def get_asleep_awake(duration: timedelta, start: callable = now):
     start = start()
-    end = start + time
+    end = start + duration
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
@@ -322,23 +324,50 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
                     break
         return log
 
-    def get_latest_sleep_amount(records):
+    def get_sleep_amount(records):
         total = timedelta()
         for i in range(0, len(records), 2):
             total += records[i+1].time - records[i].time
 
         return total
 
-    def get_latest_awake_amount(records):
+    def get_awake_amount(records):
+        records.append(
+            LogRow(
+                state=Act.asleep,
+                time=now()
+            )
+        )
+
         total = timedelta()
-        for i in range(0, len(records), 2):
+        for i in range(1, len(records), 2):
             total += records[i+1].time - records[i].time
 
         return total
+
+    def get_timeline(records):
+        assert records
+        return records[0].time, records[-1].time
+
+    def get_timeline_delta(records):
+        start, end = get_timeline(records)
+        return end - start
 
     if latest_records := get_latest_records(log):
-        latest_sleep_amount = get_latest_sleep_amount(latest_records)
+        latest_sleep_amount = get_sleep_amount(latest_records)
+        latest_awake_amount = get_awake_amount(latest_records)
+
+        gap = get_timeline_delta(latest_records)
+
+        assert not gap - latest_sleep_amount - latest_awake_amount
+
+        print(rest_per_day)
         print(f"Slept {latest_sleep_amount.seconds/3600} h.")
+        print(f"Was awake {latest_awake_amount.seconds/3600} h.")
+
+        # print("Delta:", end - start)
+        # print("Calculated:", latest_sleep_amount + latest_awake_amount)
+
 
         result = (latest_sleep_amount + rest_per_day * (time_limiter / aDay)) / (1 - (rest_per_day / aDay))
     else:
