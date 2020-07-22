@@ -1,4 +1,4 @@
-import datetime as dt
+from datetime import datetime as dt, timedelta
 import toml
 from pprint import pprint
 from os import path
@@ -9,17 +9,13 @@ from contextlib import contextmanager
 
 ALTER_LOG = False
 
-aDay = dt.timedelta(days=1)
-now = dt.datetime.now
+aDay = timedelta(days=1)
+now = dt.now
 
 datetime_fmt = "%d-%m-%Y, %H:%M:%S"
+timedelta_fmt = "%H:%M:%S"
 
 class File(ABC):
-    # def __new__(cls):
-    #     if not cls.exists():
-    #         cls.create(cls)
-
-    #     return object.__new__(cls)
 
     def exists(self):
         return path.exists(self.FILE__NAME)
@@ -48,7 +44,7 @@ class Act(Enum):
 @dataclass
 class LogRow:
     state: Act
-    time: dt.datetime
+    time: dt
 
     def as_str(self):
         return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
@@ -63,7 +59,7 @@ class LogRow:
         else:
             raise Exception("Invalid state", state)
         
-        time: dt.datetime = dt.datetime.strptime(time, datetime_fmt)
+        time: dt = dt.strptime(time, datetime_fmt)
 
         return LogRow(state=state, time=time)
 
@@ -76,7 +72,7 @@ class LogRow:
 
 @dataclass
 class Config(File):
-    rest_per_day: int #seconds
+    rest_per_day: str
 
     FILE__NAME = "conf.toml"
 
@@ -84,9 +80,10 @@ class Config(File):
         if not self.exists():
             self.create()
 
-        parsed_config_file_data = self.get()
+        parsed_config_data = self.get()
 
-        self.rest_per_day = dt.timedelta(seconds=parsed_config_file_data['rest_per_day'])
+        self.rest_per_day = parsed_config_data['rest_per_day']
+
 
     def load(self):
         assert self.exists()
@@ -94,7 +91,7 @@ class Config(File):
 
     @classmethod
     def receive_data(cls):
-        def parse_time_period(hours, minutes):
+        def parse_time_period(hours, minutes) -> timedelta:
             def within_bounds(duration, upper_bound, lower_bound = 0):
                 return lower_bound <= duration <= upper_bound
 
@@ -104,7 +101,7 @@ class Config(File):
                 minutes %= 60
 
                 assert within_bounds(hours, 24) and within_bounds(minutes, 60)
-                assert (tp := dt.timedelta(hours=hours, minutes=minutes)) < aDay
+                assert (tp := timedelta(hours=hours, minutes=minutes)) < aDay
 
                 return tp
 
@@ -112,10 +109,10 @@ class Config(File):
                 exit('Invalid input')
 
         print('? Planned rest per day')
-        hours, minutes = input_hours_minutes()
-        tp = parse_time_period(hours, minutes)
+        
+        time_period: timedelta = parse_time_period(*input_hours_minutes())
 
-        data = dict(rest_per_day = tp.seconds)
+        data = dict(rest_per_day = str(time_period))
 
         return data
 
@@ -131,14 +128,26 @@ class Config(File):
         self.create()
 
     def get(self):
+        def notify_update_load_config():
+            print('! Config file is corrupped')
+            self.update()
+            data = self.load()
+            return data
+
+        def parse_rest_per_day(s):
+            try:
+                h, m, _ = tuple(int(x) for x in s.split(':'))
+                return timedelta(hours=h, minutes=m)
+            except:
+                notify_update_load_config()
+
         data = self.load()
 
         for field_name, field in self.__dataclass_fields__.items():
             if not isinstance(data.get(field_name), field.type):
-                print('! Config file is corrupped')
-                self.update()
-                data = self.load()
-                break
+                notify_update_load_config()
+
+        data['rest_per_day'] = parse_rest_per_day(data['rest_per_day'])
 
         return data
 
@@ -158,8 +167,8 @@ class Log(File):
         with self.open('r') as log_file:
             return log_file.readlines()
 
-    def create(cls):
-        with cls.open('w'): pass
+    def create(self):
+        with self.open('w'): pass
 
     def get_content(self):
         try:
@@ -199,10 +208,9 @@ class Log(File):
 
         repaired_records = []
 
-        with self.open('r') as log_file:
-            for row in log_file.readlines():
-                if record := LogRow.safe_parse(row):
-                    repaired_records.append(record)
+        for row in self.load():
+            if record := LogRow.safe_parse(row):
+                repaired_records.append(record)
 
         if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
             del repaired_records[-1]
@@ -277,13 +285,13 @@ def cli(config, log):
     else:
         exit("Invalid input")
 
-def yield_datetime(dt: dt.datetime):
+def yield_datetime(dt: dt):
     def wrap():
         return dt
 
     return wrap
 
-def get_asleep_awake(time: dt.timedelta, start: callable = now):
+def get_asleep_awake(time: timedelta, start: callable = now):
     start = start()
     end = start + time
     asleep = LogRow(state=Act.asleep, time=start)
@@ -309,14 +317,14 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
         return log
 
     def get_latest_sleep_amount(records):
-        total = dt.timedelta()
+        total = timedelta()
         for i in range(0, len(records), 2):
             total += records[i+1].time - records[i].time
 
         return total
 
     def get_latest_awake_amount(records):
-        total = dt.timedelta()
+        total = timedelta()
         for i in range(0, len(records), 2):
             total += records[i+1].time - records[i].time
 
