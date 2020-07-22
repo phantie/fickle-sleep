@@ -2,11 +2,12 @@ import datetime as dt
 import toml
 from pprint import pprint
 from os import path
-# from sys import argv
 from enum import Enum, auto
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
 from contextlib import contextmanager
+
+ALTER_LOG = False
 
 aDay = dt.timedelta(days=1)
 now = dt.datetime.now
@@ -137,7 +138,10 @@ class Log(File):
 
 
     def __init__(self):
-        self.content = self.get_content()
+        if not self.exists():
+            with self.open('w'): pass
+
+        self.get_content()
         self.sync()
 
     def load(self):
@@ -146,26 +150,21 @@ class Log(File):
             return log_file.readlines()
 
     def get_content(self):
-        if not self.exists():
-            create_file(self.FILE__NAME)
+        try:
+            self.content = list(LogRow.parse(row) for row in self.load())
+        except:
+            print("! Log seems to be corrupted")
+            print("? Try to repair automatically")
+            while True: 
+                inp = input("{y, n} ")
+                if inp == "y":
+                    self.repair()
+                    print("! Considering data was corrupted, first\n"
+                          "  calcultations may not be accurate.\n")
+                    break
+                elif inp == "n": exit()
+                else: continue
 
-        with self.open('r') as log_file:
-            try:
-                log = list(LogRow.parse(row) for row in self.load())
-            except:
-                print("! Log seems to be corrupted")
-                print("? Try to repair automatically")
-                while True: 
-                    inp = input("{y, n} ")
-                    if inp == "y":
-                        log = self.repair()
-                        print("! Considering data was corrupted, first\n"
-                                "  calcultations may not be accurate.\n")
-                        break
-                    elif inp == "n": exit()
-                    else: continue
-
-        return log
 
     def append(self, log_row: LogRow):
         assert isinstance(log_row, LogRow)
@@ -196,23 +195,17 @@ class Log(File):
         if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
             del repaired_records[-1]
         
-        return repaired_records
+        self.content = repaired_records
         
         
     def alter_last_session(self):
         pass
 
 
-def create_file(filename):
-    with open(filename, "w"):
-        pass
-
 def input_hours_minutes() -> (str, str):
     return input('\tHours: '), input('\tMinutes: ')
 
-# def process_clargs():
-#     if len(argv) > 1 and "reset-config" in argv:
-#         create_config()
+
 
 class Clock:
     hours = list(range(0, 25))
@@ -254,8 +247,9 @@ def cli(config, log):
             calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
             asleep, awake = get_asleep_awake(calculated_amount)
 
-            # log.append(asleep)
-            # log.append(awake)
+            if ALTER_LOG:
+                log.append(asleep)
+                log.append(awake)
             
             print("\nSleep for", calculated_amount, "\nSet alarm to", now() + calculated_amount)
 
@@ -331,21 +325,6 @@ def main():
     log = Log()
 
     cli(config, log)
-
-    # fraction = (config.rest_per_day / aDay)
-
-    # print(f'{fraction=}')
-    # print(f'{config=}')
-    # print(f'{log=}')
-
-    # asleep, awake = get_asleep_awake(config.rest_per_day)
-    # calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
-    # print(calculated_amount)
-
-    # log.append(asleep)
-    # log.append(awake)
-
-    # log.sync()
 
 
 if __name__ == "__main__":
