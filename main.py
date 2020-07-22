@@ -15,8 +15,18 @@ now = dt.datetime.now
 datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 
 class File(ABC):
+    # def __new__(cls):
+    #     if not cls.exists():
+    #         cls.create(cls)
+
+    #     return object.__new__(cls)
+
     def exists(self):
         return path.exists(self.FILE__NAME)
+
+    @abstractmethod
+    def create(self):
+        pass
 
     @abstractmethod
     def load(self):
@@ -71,6 +81,9 @@ class Config(File):
     FILE__NAME = "conf.toml"
 
     def __init__(self):
+        if not self.exists():
+            self.create()
+
         parsed_config_file_data = self.get()
 
         self.rest_per_day = dt.timedelta(seconds=parsed_config_file_data['rest_per_day'])
@@ -118,10 +131,6 @@ class Config(File):
         self.create()
 
     def get(self):
-
-        if not self.exists():
-            self.create()
-
         data = self.load()
 
         for field_name, field in self.__dataclass_fields__.items():
@@ -139,8 +148,8 @@ class Log(File):
 
     def __init__(self):
         if not self.exists():
-            with self.open('w'): pass
-
+            self.create()
+        
         self.get_content()
         self.sync()
 
@@ -148,6 +157,9 @@ class Log(File):
         assert self.exists()
         with self.open('r') as log_file:
             return log_file.readlines()
+
+    def create(cls):
+        with cls.open('w'): pass
 
     def get_content(self):
         try:
