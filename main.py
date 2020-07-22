@@ -6,6 +6,7 @@ from os import path
 from enum import Enum, auto
 from dataclasses import dataclass, asdict
 from abc import ABC, abstractmethod
+from contextlib import contextmanager
 
 aDay = dt.timedelta(days=1)
 now = dt.datetime.now
@@ -19,6 +20,14 @@ class File(ABC):
     @abstractmethod
     def load(self):
         pass
+
+    @contextmanager
+    def open(self, mode):
+        try:
+            file = open(self.FILE__NAME, mode)
+            yield file
+        finally:
+            file.close()
 
 
 class Act(Enum):
@@ -101,7 +110,7 @@ class Config(File):
 
         data = self.receive_data()
 
-        with open(self.FILE__NAME, 'w') as conf_file:
+        with self.open('w') as conf_file:
             toml.dump(data, conf_file)
 
     def update(self):
@@ -133,14 +142,14 @@ class Log(File):
 
     def load(self):
         assert self.exists()
-        with open(self.FILE__NAME, "r") as log_file:
+        with self.open('r') as log_file:
             return log_file.readlines()
 
     def get_content(self):
         if not self.exists():
             create_file(self.FILE__NAME)
 
-        with open(self.FILE__NAME, "r") as log_file:
+        with self.open('r') as log_file:
             try:
                 log = list(LogRow.parse(row) for row in self.load())
             except:
@@ -162,13 +171,13 @@ class Log(File):
         assert isinstance(log_row, LogRow)
         self.content.append(log_row)
 
-        with open(self.FILE__NAME, 'a') as log_file:
+        with self.open('a') as log_file:
             log_file.write(log_row.as_str())
 
     def sync(self):
         assert hasattr(self, "content")
 
-        with open(self.FILE__NAME, 'w') as log_file:
+        with self.open('w') as log_file:
             log_file.writelines(map(lambda row: row.as_str(), self.content))
 
 
@@ -179,7 +188,7 @@ class Log(File):
 
         repaired_records = []
 
-        with open(self.FILE__NAME, "r") as log_file:
+        with self.open('r') as log_file:
             for row in log_file.readlines():
                 if record := LogRow.safe_parse(row):
                     repaired_records.append(record)
@@ -294,15 +303,22 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
         return log
 
     def get_latest_sleep_amount(records):
-        total_sleep = dt.timedelta()
+        total = dt.timedelta()
         for i in range(0, len(records), 2):
-            total_sleep += records[i+1].time - records[i].time
+            total += records[i+1].time - records[i].time
 
-        return total_sleep
+        return total
+
+    def get_latest_awake_amount(records):
+        total = dt.timedelta()
+        for i in range(0, len(records), 2):
+            total += records[i+1].time - records[i].time
+
+        return total
 
     if latest_records := get_latest_records(log):
         latest_sleep_amount = get_latest_sleep_amount(latest_records)
-        print(f"{latest_sleep_amount/3600} h.")
+        print(f"Slept {latest_sleep_amount.seconds/3600} h.")
 
         result = (latest_sleep_amount + rest_per_day * (time_limiter / aDay)) / (1 - (rest_per_day / aDay))
     else:
