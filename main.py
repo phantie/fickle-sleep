@@ -21,12 +21,6 @@ class File(ABC):
         pass
 
 
-class classproperty:
-    def __init__(self, fget):
-        self.fget = fget
-    def __get__(self, owner_self, owner_cls):
-        return self.fget(owner_cls)
-
 class Act(Enum):
     asleep = "asleep"
     awake = "awake"
@@ -131,44 +125,42 @@ class Config(File):
 
 class Log(File):
     FILE__NAME = "log.txt"
-    _content = None
+
 
     def __init__(self):
-        self.content
+        self.content = self.get_content()
+        self.sync()
 
     def load(self):
+        assert self.exists()
         with open(self.FILE__NAME, "r") as log_file:
             return log_file.readlines()
 
-    @classproperty
-    def content(self):
-        if self._content is None:
-            if not path.exists(self.FILE__NAME):
-                create_file(self.FILE__NAME)
+    def get_content(self):
+        if not self.exists():
+            create_file(self.FILE__NAME)
 
-            with open(self.FILE__NAME, "r") as log_file:
-                try:
-                    log = list(LogRow.parse(row) for row in self.load(self))
-                except:
-                    print("! Log seems to be corrupted")
-                    print("? Try to repair automatically")
-                    while True: 
-                        inp = input("{y, n} ")
-                        if inp == "y":
-                            self.repair(self)
-                            print("! Considering data was corrupted, first\n"
-                                  "  calcultations may not be accurate.\n")
-                            break
-                        elif inp == "n": exit()
-                        else: continue
-                else:
-                    self._content = log
+        with open(self.FILE__NAME, "r") as log_file:
+            try:
+                log = list(LogRow.parse(row) for row in self.load())
+            except:
+                print("! Log seems to be corrupted")
+                print("? Try to repair automatically")
+                while True: 
+                    inp = input("{y, n} ")
+                    if inp == "y":
+                        log = self.repair()
+                        print("! Considering data was corrupted, first\n"
+                                "  calcultations may not be accurate.\n")
+                        break
+                    elif inp == "n": exit()
+                    else: continue
 
-        return self._content
+        return log
 
     def append(self, log_row: LogRow):
         assert isinstance(log_row, LogRow)
-        self._content.append(log_row)
+        self.content.append(log_row)
 
         with open(self.FILE__NAME, 'a') as log_file:
             log_file.write(log_row.as_str())
@@ -183,7 +175,7 @@ class Log(File):
     ### It won`t save againts drastical
     ### manual log interruption. So don`t.
     def repair(self):
-        assert self.exists(self)
+        assert self.exists()
 
         repaired_records = []
 
@@ -195,10 +187,9 @@ class Log(File):
         if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
             del repaired_records[-1]
         
-        self._content = repaired_records
+        return repaired_records
         
-        self.sync(self)
-
+        
     def alter_last_session(self):
         pass
 
@@ -251,13 +242,13 @@ def cli(config, log):
 
     if num.isnumeric() and (num := int(num)) in range(1, 5):
         if num == 1:
-            asleep, awake = get_asleep_awake(config.rest_per_day)
             calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
+            asleep, awake = get_asleep_awake(calculated_amount)
 
             # log.append(asleep)
             # log.append(awake)
             
-            print(calculated_amount)
+            print("\nSleep for", calculated_amount, "\nSet alarm to", now() + calculated_amount)
 
         elif num == 2:
             print("? How much did you sleep last time")
@@ -311,6 +302,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
     if latest_records := get_latest_records(log):
         latest_sleep_amount = get_latest_sleep_amount(latest_records)
+        print(f"{latest_sleep_amount/3600} h.")
 
         result = (latest_sleep_amount + rest_per_day * (time_limiter / aDay)) / (1 - (rest_per_day / aDay))
     else:
