@@ -91,26 +91,14 @@ class Config(File):
 
     @classmethod
     def receive_data(cls):
-        def parse_time_period(hours, minutes) -> timedelta:
-            def within_bounds(duration, upper_bound, lower_bound = 0):
-                return lower_bound <= duration <= upper_bound
-
-            try:
-                hours, minutes = int(hours), int(minutes)
-                hours += minutes // 60
-                minutes %= 60
-
-                assert within_bounds(hours, 24) and within_bounds(minutes, 60)
-                assert (tp := timedelta(hours=hours, minutes=minutes)) < aDay
-
-                return tp
-
-            except (ValueError, AssertionError):
-                exit('Invalid input')
 
         print('? Planned rest per day')
         
-        time_period: timedelta = parse_time_period(*input_hours_minutes())
+        try:
+            time_period: timedelta = parse_time_period(*input_hours_minutes())
+        except (ValueError, AssertionError):
+            exit('Invalid input')
+
 
         data = dict(rest_per_day = str(time_period))
 
@@ -136,18 +124,22 @@ class Config(File):
 
         def parse_rest_per_day(s):
             try:
-                h, m, _ = tuple(int(x) for x in s.split(':'))
-                return timedelta(hours=h, minutes=m)
-            except:
-                notify_update_load_config()
-
+                h, m, _ = s.split(':')
+                return parse_time_period(h, m)
+            except (ValueError, AssertionError):
+                return None
+                
         data = self.load()
 
         for field_name, field in self.__dataclass_fields__.items():
             if not isinstance(data.get(field_name), field.type):
-                notify_update_load_config()
+                data = notify_update_load_config()
+                break
 
-        data['rest_per_day'] = parse_rest_per_day(data['rest_per_day'])
+        if not (rpd := parse_rest_per_day(data['rest_per_day'])):
+            data = notify_update_load_config()
+        else:
+            data['rest_per_day'] = rpd
 
         return data
 
@@ -225,6 +217,20 @@ class Log(File):
 def input_hours_minutes() -> (str, str):
     return input('\tHours: '), input('\tMinutes: ')
 
+def parse_time_period(hours: str, minutes: str) -> timedelta:
+    def within_bounds(duration, upper_bound, lower_bound = 0):
+        return lower_bound <= duration <= upper_bound
+
+    assert isinstance(hours, str) and isinstance(minutes, str)
+
+    hours, minutes = int(hours), int(minutes)
+    hours += minutes // 60
+    minutes %= 60
+
+    assert within_bounds(hours, 24) and within_bounds(minutes, 60)
+    assert (tp := timedelta(hours=hours, minutes=minutes)) < aDay
+
+    return tp
 
 
 class Clock:
