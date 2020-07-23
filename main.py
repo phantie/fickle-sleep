@@ -234,15 +234,18 @@ class Log(File):
 class Round:
     @classmethod
     def timedelta(cls, td):
+        assert isinstance(td, timedelta)
         return parseHM_(str(td).split('.')[0])
 
     @classmethod
     def float(cls, fl):
+        assert isinstance(fl, float)
         return round(fl, ndigits=1)
 
     @classmethod
-    def datetime(cls, dt):
-        return dt.replace(microsecond=0, second=0)
+    def datetime(cls, d):
+        assert isinstance(d, dt)
+        return d.replace(microsecond=0, second=0)
 
 
 def now():
@@ -318,9 +321,98 @@ class Clock:
         elif this_hour in cls.between(21, 3):
             return "night"
 
+class Level:
+    def __init__(self, *sub_levels):
+        self.levels: list = sub_levels
+        self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
 
-def cli(config, log, goto = 0):
-    print(
+    def __add__(self, other):
+        if isinstance(other, Level):
+            return Level(self.levels + other.levels)
+        else:
+            raise NotImplemented
+
+    def __eq__(self, other):
+        if isinstance(other, Level):
+            return self.levels == other.levels
+        elif other is None:
+            return False
+        else:
+            raise NotImplemented
+
+
+
+class Layer:
+    contents = []
+
+    def __init__(self, **kwargs):
+        assert len(set(el.levels for el in kwargs.values())) == len(kwargs.values()), \
+            "Layer must not own equal levels"
+
+        assert all(len(el.levels) == len(self.contents) + 1 for el in kwargs.values()), \
+            "Some levels do not belong to this layer"
+
+        self.levels = kwargs
+
+    @classmethod
+    def add(cls, **d):
+        cls.contents.append(cls(**d))
+
+    @classmethod
+    def get(cls, number):
+        assert 0 < number <= len(cls.contents)
+        return cls.contents[number - 1]
+
+    @classmethod
+    def children(cls, *args):
+        parent = Level(*args)
+        children = []
+        if layer := cls.get(len(args) + 1):
+            for lvl in layer.levels.values():
+                if lvl.parent == parent:
+                    children.append(lvl)
+
+        return children
+
+    @classmethod
+    def find(cls, name):
+        for layer in cls.contents:
+            if found := layer.__dict__['levels'].get(name):
+                return found
+
+    @classmethod
+    def find_name(cls, lvl):
+        if layer := cls.get(len(lvl.levels)):
+            for name, level in layer.__dict__['levels'].items():
+                if level == lvl:
+                    return name
+
+
+def init_cli_layers():
+    Layer.add(**dict(
+        calc = Level(1),
+        correct = Level(2),
+        update = Level(3),
+        leave = Level(4),
+    ))
+
+    Layer.add(**dict(
+        overslept = Level(2, 1),
+        underslept = Level(2, 2),    
+        idk = Level(3, 1),
+    ))
+
+init_cli_layers()
+# print(Layer.children(2, 1))
+# print(Layer.find("calc"))
+# print(Layer.find_name(Level(2)))
+
+
+
+def cli(config, log, case = 0):
+
+    if not case:
+        print(
         f"Good {Clock.part_of_day()}. Please select:\n"
         "1. Calculate sleep duration.\n"
         "2. Correct last sleep session.\n"
@@ -328,24 +420,24 @@ def cli(config, log, goto = 0):
         "4. Exit.\n"
         )
     
-    num = input_until_correct(
-        "Enter: ", "Try again: ", 
-        parser = parse_cli_input,
-        choices = 4)
+    num = case or input_until_correct(
+                                "Enter: ", "Try again: ", 
+                                parser = parse_cli_input,
+                                choices = 4)
 
 
     if num == 1:
-        calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
-        asleep, awake = get_asleep_awake(calculated_amount)
+        sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
+        asleep, awake = get_asleep_awake(sleep_for)
 
         if ALTER_LOG:
             log.append(asleep)
             log.append(awake)
         
-        print("\nSleep for", calculated_amount, "\nSet alarm to", now() + calculated_amount)
+        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
 
     elif num == 2:
-        pass
+        return 0
 
     elif num == 3:
         config.update()
@@ -437,8 +529,11 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 def main():
     def run_until_returns_blank(f, *args, **kwags):
         while True:
-            if f(*args, **kwags) is None:
+            if (res := f(*args, **kwags)) is None:
                 break
+            else:
+                kwags['case'] = res
+
 
     config = Config()
     log = Log()
