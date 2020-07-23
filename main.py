@@ -1,18 +1,41 @@
 from datetime import datetime as dt, timedelta
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from enum import Enum
 from os import path
 import toml
+from copy import deepcopy
 
 ALTER_LOG = False
 
 aDay = timedelta(days=1)
-now = dt.now
 
 datetime_fmt = "%d-%m-%Y, %H:%M:%S"
 timedelta_fmt = "%H:%M:%S"
+
+
+
+print_dc = deepcopy(print)
+def _print(*args):
+    _args = []
+    for el in args:
+        if isinstance(el, float):
+            processed = Round.float(el)
+        elif isinstance(el, dt):
+            processed = Round.datetime(el)
+        elif isinstance(el, timedelta):
+            processed = Round.timedelta(el)
+        else:
+            processed = el
+
+        _args.append(processed)
+
+    print_dc(*_args)
+
+print = _print
+
+
 
 class File(ABC):
 
@@ -94,12 +117,12 @@ class Config(File):
         print('? Planned rest per day')
         
         try:
-            time_period: timedelta = parse_time_period(*input_hours_minutes())
+            td: timedelta = receive_timedelta()
         except (ValueError, AssertionError):
             exit('Invalid input')
 
 
-        data = dict(rest_per_day = str(time_period))
+        data = dict(rest_per_day = str(td))
 
         return data
 
@@ -120,13 +143,6 @@ class Config(File):
             self.update()
             data = self.load()
             return data
-
-        def parse_rest_per_day(s):
-            try:
-                h, m, _ = s.split(':')
-                return parse_time_period(h, m)
-            except (ValueError, AssertionError):
-                return None
                 
         data = self.load()
 
@@ -135,7 +151,7 @@ class Config(File):
                 data = notify_update_load_config()
                 break
 
-        if not (rpd := parse_rest_per_day(data['rest_per_day'])):
+        if not (rpd := parseHM_(data['rest_per_day'])):
             data = notify_update_load_config()
         else:
             data['rest_per_day'] = rpd
@@ -206,7 +222,7 @@ class Log(File):
             if record := LogRow.safe_parse(row):
                 repaired_records.append(record)
 
-        if len(repaired_records) > 0 and repaired_records[-1].state is not Act.awake:
+        if repaired_records and repaired_records[-1].state is not Act.awake:
             del repaired_records[-1]
         
         self.content = repaired_records
@@ -215,89 +231,131 @@ class Log(File):
     def alter_last_session(self):
         pass
 
+class Round:
+    @classmethod
+    def timedelta(cls, td):
+        return parseHM_(str(td).split('.')[0])
 
-def input_hours_minutes() -> (str, str):
-    return input('\tHours: '), input('\tMinutes: ')
+    @classmethod
+    def float(cls, fl):
+        return round(fl, ndigits=1)
+
+    @classmethod
+    def datetime(cls, dt):
+        return dt.replace(microsecond=0, second=0)
+
+
+def now():
+    return Round.datetime(dt.now())
+
+def input_until_correct(message, subsequent_try_message, /, parser: callable, **kwargs):
+    lap = 0
+    while True:
+        if (parsed := parser(input(message), **kwargs)) is not None:
+            return parsed
+        lap += 1
+        if lap:
+            message = subsequent_try_message
+
+def receive_timedelta() -> timedelta:
+    def input_hours_minutes() -> (str, str):
+        return input('\tHours: '), input('\tMinutes: ')
+
+    h, m = input_hours_minutes()
+    return parse_time_period(h, m)
 
 def parse_time_period(hours: str, minutes: str) -> timedelta:
     def within_bounds(duration, upper_bound, lower_bound = 0):
         return lower_bound <= duration <= upper_bound
 
-    assert isinstance(hours, str) and isinstance(minutes, str)
+    with suppress(ValueError, AssertionError):
+        assert isinstance(hours, str) and isinstance(minutes, str)
 
-    hours, minutes = int(hours), int(minutes)
-    hours += minutes // 60
-    minutes %= 60
+        hours, minutes = int(hours), int(minutes)
+        hours += minutes // 60
+        minutes %= 60
 
-    assert within_bounds(hours, 24) and within_bounds(minutes, 60)
-    assert (tp := timedelta(hours=hours, minutes=minutes)) < aDay
+        assert within_bounds(hours, 24) and within_bounds(minutes, 60)
+        assert (tp := timedelta(hours=hours, minutes=minutes)) < aDay
 
-    return tp
+        return tp
 
+
+def parseHM_(s):
+    h, m, _ = s.split(':')
+    return parse_time_period(h, m)
+
+
+def parse_cli_input(n: str, choices: int):
+    def parse_int(n: str):
+        if n.isnumeric():
+            return int(n)
+
+    if (num := parse_int(n)) is not None:
+        if num in range(1, choices + 1):
+            return num
 
 class Clock:
     hours = list(range(0, 25))
 
     @classmethod
-    def between(self, start, end):
+    def between(cls, start, end):
         if start <= end:
-            return self.hours[start:end+1]
+            return cls.hours[start:end+1]
         else:
-            return self.hours[start:] + self.hours[:end+1]
+            return cls.hours[start:] + cls.hours[:end+1]
 
-def part_of_day():
-    this_hour = now().hour
+    @classmethod
+    def part_of_day(cls):
+        this_hour = now().hour
 
-    if this_hour in Clock.between(4, 11):
-        return "morning"
-    elif this_hour in Clock.between(12, 16):
-        return "afternoon"
-    elif this_hour in Clock.between(17, 20):
-        return "evening"
-    elif this_hour in Clock.between(21, 3):
-        return "night"
+        if this_hour in cls.between(4, 11):
+            return "morning"
+        elif this_hour in cls.between(12, 16):
+            return "afternoon"
+        elif this_hour in cls.between(17, 20):
+            return "evening"
+        elif this_hour in cls.between(21, 3):
+            return "night"
 
 
-
-def cli(config, log):
+def cli(config, log, goto = 0):
     print(
-        f"Good {part_of_day()}. Please select:\n"
+        f"Good {Clock.part_of_day()}. Please select:\n"
         "1. Calculate sleep duration.\n"
         "2. Correct last sleep session.\n"
         "3. Update configuration.\n"
         "4. Exit.\n"
         )
     
-    num = input("Enter: ")
+    num = input_until_correct(
+        "Enter: ", "Try again: ", 
+        parser = parse_cli_input,
+        choices = 4)
 
-    if num.isnumeric() and (num := int(num)) in range(1, 5):
-        if num == 1:
-            calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
-            asleep, awake = get_asleep_awake(calculated_amount)
 
-            if ALTER_LOG:
-                log.append(asleep)
-                log.append(awake)
-            
-            print("\nSleep for", calculated_amount, "\nSet alarm to", now() + calculated_amount)
+    if num == 1:
+        calculated_amount = calculate_amount_of_sleep(log.content, config.rest_per_day)
+        asleep, awake = get_asleep_awake(calculated_amount)
 
-        elif num == 2:
-            print("? How much did you sleep last time")
-            hours, minutes = input_hours_minutes()
+        if ALTER_LOG:
+            log.append(asleep)
+            log.append(awake)
+        
+        print("\nSleep for", calculated_amount, "\nSet alarm to", now() + calculated_amount)
 
-        elif num == 3:
-            config.update()
+    elif num == 2:
+        pass
 
-        elif num == 4:
-            exit("Bye")
-    else:
-        exit("Invalid input")
+    elif num == 3:
+        config.update()
 
-def yield_datetime(dt: dt):
-    def wrap():
-        return dt
+    elif num == 4:
+        exit("Bye")
 
-    return wrap
+
+def lazy_yield(x) -> callable:
+    return lambda: x
 
 def get_asleep_awake(duration: timedelta, start: callable = now):
     start = start()
@@ -341,6 +399,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
         total = timedelta()
         for i in range(1, len(records), 2):
+            print('Awake from', records[i].time, "to", records[i+1].time, 'Delta:', records[i+1].time - records[i].time)
             total += records[i+1].time - records[i].time
 
         return total
@@ -359,11 +418,11 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
         gap = get_timeline_delta(latest_records)
 
-        assert not gap - latest_sleep_amount - latest_awake_amount
+        assert not gap - (latest_sleep_amount + latest_awake_amount)
 
         print(rest_per_day)
-        print(f"Slept {latest_sleep_amount.seconds/3600} h.")
-        print(f"Was awake {latest_awake_amount.seconds/3600} h.")
+        print("Slept", latest_sleep_amount.seconds/3600, "h.")
+        print("Was awake", latest_awake_amount.seconds/3600, "h.")
 
         # print("Delta:", end - start)
         # print("Calculated:", latest_sleep_amount + latest_awake_amount)
@@ -376,10 +435,16 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
     return result
 
 def main():
+    def run_until_returns_blank(f, *args, **kwags):
+        while True:
+            if f(*args, **kwags) is None:
+                break
+
     config = Config()
     log = Log()
 
-    cli(config, log)
+    run_until_returns_blank(cli, config, log)
+
 
 
 if __name__ == "__main__":
