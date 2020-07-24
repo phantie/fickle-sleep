@@ -71,26 +71,26 @@ class LogRow:
     def as_str(self):
         return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
 
-    @classmethod
-    def parse(cls, row):
-        state, time = row.rstrip('\n').split(maxsplit=1)
-        for state_name, _state in Act.__members__.items():
-            if state_name == state:
-                state: Act = _state
-                break
-        else:
-            raise Exception("Invalid state", state)
-        
-        time: dt = dt.strptime(time, datetime_fmt)
-
-        return LogRow(state=state, time=time)
-
-    @classmethod
-    def safe_parse(cls, row):
+    @staticmethod
+    def parse(row, failproof=False):
         try:
-            return cls.parse(row)
+            state, time = row.rstrip('\n').split(maxsplit=1)
+            for state_name, _state in Act.__members__.items():
+                if state_name == state:
+                    state: Act = _state
+                    break
+            else:
+                raise Exception("Invalid state", state)
+            
+            time: dt = dt.strptime(time, datetime_fmt)
+
+            return LogRow(state=state, time=time)
         except:
-            return ""
+            if failproof:
+                return ""
+            else:
+                raise
+
 
 @dataclass
 class Config(File):
@@ -111,8 +111,8 @@ class Config(File):
         assert self.exists()
         return toml.load(self.FILE__NAME)
 
-    @classmethod
-    def receive_data(cls):
+    @staticmethod
+    def receive_data():
 
         print('? Planned rest per day')
         
@@ -219,7 +219,7 @@ class Log(File):
         repaired_records = []
 
         for row in self.load():
-            if record := LogRow.safe_parse(row):
+            if record := LogRow.parse(row, failproof=True):
                 repaired_records.append(record)
 
         if repaired_records and repaired_records[-1].state is not Act.awake:
@@ -232,18 +232,18 @@ class Log(File):
         pass
 
 class Round:
-    @classmethod
-    def timedelta(cls, td):
+    @staticmethod
+    def timedelta(td):
         assert isinstance(td, timedelta)
         return parseHM_(str(td).split('.')[0])
 
-    @classmethod
-    def float(cls, fl):
+    @staticmethod
+    def float(fl):
         assert isinstance(fl, float)
         return round(fl, ndigits=1)
 
-    @classmethod
-    def datetime(cls, d):
+    @staticmethod
+    def datetime(d):
         assert isinstance(d, dt)
         return d.replace(microsecond=0, second=0)
 
@@ -341,8 +341,6 @@ class Level:
     def __eq__(self, other):
         if isinstance(other, Level):
             return self.levels == other.levels
-        elif other is None:
-            return False
         else:
             raise NotImplemented
 
@@ -361,7 +359,7 @@ class Layer:
         self.levels = kwargs
 
     @classmethod
-    def add(cls, **d):
+    def add(cls, d):
         cls.contents.append(cls(**d))
 
     @classmethod
@@ -383,8 +381,7 @@ class Layer:
     @classmethod
     def find(cls, name):
         for layer in cls.contents:
-            if found := layer.__dict__['levels'].get(name):
-                return found
+            return layer.__dict__['levels'].get(name)
 
     @classmethod
     def find_name(cls, lvl):
@@ -404,7 +401,7 @@ class Layer:
 
 
 def init_cli_layers():
-    Layer.add(**dict(
+    Layer.add(dict(
         calc = Level(1),
         correct = Level(2),
         update_conf = Level(3),
@@ -467,8 +464,6 @@ def cli(commander, case = None):
 
     if func_name := Layer.find_name(case):
         return getattr(Commander, func_name)(commander)
-    else:
-        raise Exception("Case does not exist" + str(case))
 
 
 def lazy_yield(x) -> callable:
