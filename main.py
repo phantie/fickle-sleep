@@ -408,7 +408,7 @@ def init_cli_layers():
         leave = Level(4),
     ))
 
-    # Layer.add(**dict(
+    # Layer.add(dict(
     #     overslept = Level(2, 1),
     #     underslept = Level(2, 2),    
     #     idk = Level(3, 1),
@@ -435,6 +435,8 @@ class Commander:
             self.log.append(awake)
 
         print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
+
+        return sleep_for
 
     def correct(self):
         return Level(4)
@@ -547,9 +549,9 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
     return result
 
 def main():
-    def run_until_returns_blank(f, *args, **kwags):
+    def run_while_jumps(f, *args, **kwags):
         while True:
-            if (res := f(*args, **kwags)) is None:
+            if not isinstance((res := f(*args, **kwags)), Level):
                 break
             else:
                 kwags['case'] = res
@@ -559,7 +561,7 @@ def main():
     log = Log()
     commander = Commander(config, log)
 
-    run_until_returns_blank(cli, commander)
+    run_while_jumps(cli, commander)
 
 
 
