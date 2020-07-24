@@ -296,7 +296,7 @@ def parse_cli_input(n: str, choices: int):
 
     if (num := parse_int(n)) is not None:
         if num in range(1, choices + 1):
-            return num
+            return Level(num)
 
 class Clock:
     hours = list(range(0, 25))
@@ -325,6 +325,12 @@ class Level:
     def __init__(self, *sub_levels):
         self.levels: list = sub_levels
         self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.levels if len(self.levels)>1 else self.levels[0]})"
+
+    def __repr__(self):
+        return str(self)
 
     def __add__(self, other):
         if isinstance(other, Level):
@@ -387,29 +393,63 @@ class Layer:
                 if level == lvl:
                     return name
 
+    @classmethod
+    def all_levels(cls):
+        result = {}
+
+        for layer in cls.contents:
+            result.update(layer.levels)
+
+        return result
+
 
 def init_cli_layers():
     Layer.add(**dict(
         calc = Level(1),
         correct = Level(2),
-        update = Level(3),
+        update_conf = Level(3),
         leave = Level(4),
     ))
 
-    Layer.add(**dict(
-        overslept = Level(2, 1),
-        underslept = Level(2, 2),    
-        idk = Level(3, 1),
-    ))
+    # Layer.add(**dict(
+    #     overslept = Level(2, 1),
+    #     underslept = Level(2, 2),    
+    #     idk = Level(3, 1),
+    # ))
 
-init_cli_layers()
+
 # print(Layer.children(2, 1))
 # print(Layer.find("calc"))
 # print(Layer.find_name(Level(2)))
+# print(Layer.all_levels())
 
 
+class Commander:
+    def __init__(self, config, log):
+        self.config = config
+        self.log = log
 
-def cli(config, log, case = 0):
+    def calc(self):
+        sleep_for = calculate_amount_of_sleep(self.log.content, self.config.rest_per_day)
+        asleep, awake = get_asleep_awake(sleep_for)
+
+        if ALTER_LOG:
+            self.log.append(asleep)
+            self.log.append(awake)
+
+        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
+
+    def correct(self):
+        return Level(4)
+
+    def update_conf(self):
+        self.config.update()
+
+    def leave(self):
+        exit("Bye")
+
+
+def cli(commander, case = None):
 
     if not case:
         print(
@@ -420,30 +460,15 @@ def cli(config, log, case = 0):
         "4. Exit.\n"
         )
     
-    num = case or input_until_correct(
+    case = case or input_until_correct(
                                 "Enter: ", "Try again: ", 
                                 parser = parse_cli_input,
                                 choices = 4)
 
-
-    if num == 1:
-        sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
-        asleep, awake = get_asleep_awake(sleep_for)
-
-        if ALTER_LOG:
-            log.append(asleep)
-            log.append(awake)
-        
-        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
-
-    elif num == 2:
-        return 0
-
-    elif num == 3:
-        config.update()
-
-    elif num == 4:
-        exit("Bye")
+    if func_name := Layer.find_name(case):
+        return getattr(Commander, func_name)(commander)
+    else:
+        raise Exception("Case does not exist" + str(case))
 
 
 def lazy_yield(x) -> callable:
@@ -534,11 +559,12 @@ def main():
             else:
                 kwags['case'] = res
 
-
+    init_cli_layers()
     config = Config()
     log = Log()
+    commander = Commander(config, log)
 
-    run_until_returns_blank(cli, config, log)
+    run_until_returns_blank(cli, commander)
 
 
 
