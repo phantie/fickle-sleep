@@ -1,4 +1,4 @@
-from datetime import datetime as dt, timedelta
+from datetime import datetime as dt, timedelta, date
 from contextlib import contextmanager, suppress
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
@@ -24,7 +24,19 @@ def _print(*args):
         if isinstance(el, float):
             processed = Round.float(el)
         elif isinstance(el, dt):
-            processed = Round.datetime(el)
+            def datetime_to_date_str(dt):
+                return str(dt.date())
+
+            freezed_moment = now()
+            yesterday = datetime_to_date_str(freezed_moment - aDay)
+            today = datetime_to_date_str(freezed_moment)
+            tomorrow = datetime_to_date_str(freezed_moment + aDay)
+
+            processed = (str(Round.datetime(el))
+            .replace(yesterday, "yesterday")
+            .replace(today, "today")
+            .replace(tomorrow, "tomorrow"))
+
         elif isinstance(el, timedelta):
             processed = Round.timedelta(el)
         else:
@@ -386,7 +398,6 @@ def calc(config, log):
         print("You should not sleep for at least", abs(sleep_for))
     else:
         asleep, awake = get_asleep_awake(sleep_for)
-
         if ALTER_LOG:
             log.append(asleep)
             log.append(awake)
@@ -502,7 +513,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 4 * aDay):
 
         assert gap == latest_sleep_amount + latest_awake_amount
 
-        # print("Gap", gap)
+        print("Gap", gap)
         print("Slept", latest_sleep_amount)
         print("Was awake", latest_awake_amount)
 
