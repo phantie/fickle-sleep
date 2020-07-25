@@ -130,3 +130,4 @@ dmypy.json
 
 conf.toml
 log.txt
+.vscode
