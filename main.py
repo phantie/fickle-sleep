@@ -187,15 +187,21 @@ class Log(File):
         except:
             print("! Log seems to be corrupted")
             print("? Try to repair automatically")
-            while True: 
-                inp = input("{y, n} ")
-                if inp == "y":
-                    self.repair()
-                    print("! Considering data was corrupted, first\n"
-                          "  calcultations may not be accurate.\n")
-                    break
-                elif inp == "n": exit()
-                else: continue
+
+            def parse_confirmation(arg):
+                if arg == "y" or arg == "yes":
+                    return True
+                elif arg == "n" or arg == "no":
+                    return False
+
+            confirm = input_until_correct("y|n", "yes|no", parse_confirmation)
+
+            if confirm:
+                self.repair()
+                print("! Considering data was corrupted, first\n"
+                        "  calcultations may not be accurate.\n")
+
+            else: exit()
 
 
     def append(self, log_row: LogRow):
@@ -253,7 +259,12 @@ def now():
     return Round.datetime(dt.now())
 
 def input_until_correct(message, subsequent_try_message, /, parser: callable, **kwargs):
+    def wrap_message(message):
+        return message + ": "
+
     lap = 0
+    message = wrap_message(message)
+    subsequent_try_message = wrap_message(subsequent_try_message)
     while True:
         if (parsed := parser(input(message), **kwargs)) is not None:
             return parsed
@@ -346,120 +357,56 @@ class Level:
             raise NotImplemented
 
 
-
-class Layer:
-    contents = []
-
-    def __init__(self, **kwargs):
-        assert len(set(el.levels for el in kwargs.values())) == len(kwargs.values()), \
-            "Layer must not own equal levels"
-
-        assert all(len(el.levels) == len(self.contents) + 1 for el in kwargs.values()), \
-            "Some levels do not belong to this layer"
-
-        self.levels = kwargs
+@dataclass
+class Route:
+    contents = {}
 
     @classmethod
-    def add(cls, d):
-        cls.contents.append(cls(**d))
+    def set(cls, lvl, func):
+        cls.contents[str(lvl)] = func
 
     @classmethod
-    def get(cls, number):
-        assert 0 < number <= len(cls.contents)
-        return cls.contents[number - 1]
+    def get(cls, lvl):
+        return cls.contents.get(str(lvl))
 
     @classmethod
-    def children(cls, *args):
-        parent = Level(*args)
-        children = []
-        if layer := cls.get(len(args) + 1):
-            for lvl in layer.levels.values():
-                if lvl.parent == parent:
-                    children.append(lvl)
-
-        return children
-
-    @classmethod
-    def find(cls, name):
-        for layer in cls.contents:
-            if name := layer.__dict__['levels'].get(name):
-                return name
-
-    @classmethod
-    def find_name(cls, lvl):
-        if layer := cls.get(len(lvl.levels)):
-            for name, level in layer.__dict__['levels'].items():
-                if level == lvl:
-                    return name
-
-    @classmethod
-    def all_levels(cls):
-        result = {}
-
-        for layer in cls.contents:
-            result.update(layer.levels)
-
-        return result
+    def new(cls, lvl):
+        def decorator_route(func):
+            cls.set(lvl, func)
+            @functools.wraps(func)
+            def wrapper_route(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper_route
+        return decorator_route
 
 
-def init_cli_layers():
-    Layer.add(dict(
-        calc = Level(1),
-        correct = Level(2),
-        update_conf = Level(3),
-        leave = Level(4),
-    ))
+@Route.new(Level(1))
+def calc(config, log):
+    sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
+    asleep, awake = get_asleep_awake(sleep_for)
 
-    # Layer.add(dict(
-    #     overslept = Level(2, 1),
-    #     underslept = Level(2, 2),    
-    #     idk = Level(3, 1),
-    # ))
+    if ALTER_LOG:
+        log.append(asleep)
+        log.append(awake)
+
+    print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
+
+    return sleep_for
+
+@Route.new(Level(2))
+def correct(config, log):
+    return Level(4)
+
+@Route.new(Level(3))
+def update_conf(config, log):
+    config.update()
+
+@Route.new(Level(4))
+def leave(config, log):
+    exit("Bye")
 
 
-# print(Layer.children(2, 1))
-# print(Layer.find("calc"))
-# print(Layer.find_name(Level(2)))
-# print(Layer.all_levels())
-
-
-class Commander:
-    def __init__(self, config, log):
-        self.config: Config = config
-        self.log: Log = log
-
-    def calc(self):
-        sleep_for = calculate_amount_of_sleep(self.log.content, self.config.rest_per_day)
-        asleep, awake = get_asleep_awake(sleep_for)
-
-        if ALTER_LOG:
-            self.log.append(asleep)
-            self.log.append(awake)
-
-        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
-
-        return sleep_for
-
-    def correct(self):
-        return Level(4)
-
-    def update_conf(self):
-        self.config.update()
-
-    def leave(self):
-        exit("Bye")
-
-def position(lvl: Level):
-    def decorator_position(func):
-        @functools.wraps(func)
-        def wrapper_position(*args, **kwargs):
-            for _ in range(num_times):
-                value = func(*args, **kwargs)
-            return value
-        return wrapper_position
-    return decorator_position
-
-def cli(commander, case = None):
+def cli(config, log, case = None):
 
     if not case:
         print(
@@ -471,12 +418,13 @@ def cli(commander, case = None):
         )
     
     case = case or input_until_correct(
-                                "Enter: ", "Try again: ", 
+                                "Enter", "Try again", 
                                 parser = parse_cli_input,
                                 choices = 4)
 
-    if func_name := Layer.find_name(case):
-        return getattr(Commander, func_name)(commander)
+ 
+    if route := Route.get(case):
+        return route(config, log)
 
 
 def lazy_yield(x) -> callable:
@@ -571,12 +519,10 @@ def main():
             else:
                 kwargs['case'] = res
 
-    init_cli_layers()
     config = Config()
     log = Log()
-    commander = Commander(config, log)
 
-    run_while_jumps(cli, commander)
+    run_while_jumps(cli, config, log)
 
 
 
