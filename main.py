@@ -35,8 +35,7 @@ def _print(*args):
     print_dc(*_args)
 
 print = _print
-
-
+ 
 
 class File(ABC):
 
@@ -242,12 +241,12 @@ class Round:
     @staticmethod
     def timedelta(td):
         assert isinstance(td, timedelta)
-        return parseHM_(str(td).split('.')[0])
+        return str(td).split('.')[0]
 
     @staticmethod
     def float(fl):
         assert isinstance(fl, float)
-        return round(fl, ndigits=1)
+        return round(fl, ndigits=2)
 
     @staticmethod
     def datetime(d):
@@ -357,7 +356,6 @@ class Level:
             raise NotImplemented
 
 
-@dataclass
 class Route:
     contents = {}
 
@@ -383,18 +381,27 @@ class Route:
 @Route.new(Level(1))
 def calc(config, log):
     sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
-    asleep, awake = get_asleep_awake(sleep_for)
 
-    if ALTER_LOG:
-        log.append(asleep)
-        log.append(awake)
+    if sleep_for < timedelta():
+        print("You should not sleep for at least", abs(sleep_for))
+    else:
+        asleep, awake = get_asleep_awake(sleep_for)
 
-    print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
+        if ALTER_LOG:
+            log.append(asleep)
+            log.append(awake)
+
+        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
 
     return sleep_for
 
 @Route.new(Level(2))
 def correct(config, log):
+    return Level(2, 1)
+
+@Route.new(Level(2, 1))
+def jesus(config, log):
+    print("jesus?")
     return Level(4)
 
 @Route.new(Level(3))
@@ -437,11 +444,12 @@ def get_asleep_awake(duration: timedelta, start: callable = now):
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
 
-def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
+def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 4 * aDay):
     
     def get_latest_records(log):
         nonlocal time_limiter
-        start_moment = now() - time_limiter
+        begin = now()
+        start_moment = begin - time_limiter
 
         if log:
             for i, record in enumerate(log):
@@ -451,7 +459,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
                     elif record.state is Act.asleep:
                         log = log[i:]
 
-                    time_limiter = start_moment - log[0].time
+                    time_limiter = begin - log[0].time
                     break
         return log
 
@@ -473,7 +481,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
         total = timedelta()
         for i in range(1, len(records), 2):
             assert records[i+1].time > records[i].time
-            print('Awake from', records[i].time, "to", records[i+1].time, 'Delta:', records[i+1].time - records[i].time)
+            # print('Awake from', records[i].time, "to", records[i+1].time, 'Delta:', records[i+1].time - records[i].time)
             total += records[i+1].time - records[i].time
 
         return total
@@ -492,17 +500,17 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
         gap = get_timeline_delta(latest_records)
 
-        assert not gap - (latest_sleep_amount + latest_awake_amount)
+        assert gap == latest_sleep_amount + latest_awake_amount
 
-        print(rest_per_day)
-        print("Slept", latest_sleep_amount.seconds/3600, "h.")
-        print("Was awake", latest_awake_amount.seconds/3600, "h.")
+        # print("Gap", gap)
+        print("Slept", latest_sleep_amount)
+        print("Was awake", latest_awake_amount)
 
         # print("Delta:", end - start)
         # print("Calculated:", latest_sleep_amount + latest_awake_amount)
 
-
-        result = (latest_sleep_amount + rest_per_day * (time_limiter / aDay)) / (1 - (rest_per_day / aDay))
+        # print(latest_sleep_amount, rest_per_day, time_limiter / aDay, rest_per_day / aDay)
+        result = ((rest_per_day / aDay) * gap - latest_sleep_amount) / (1 - (rest_per_day / aDay))
     else:
         result = rest_per_day
 
