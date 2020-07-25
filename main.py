@@ -6,6 +6,7 @@ from enum import Enum
 from os import path
 import toml
 from copy import deepcopy
+import functools
 
 ALTER_LOG = False
 
@@ -381,7 +382,8 @@ class Layer:
     @classmethod
     def find(cls, name):
         for layer in cls.contents:
-            return layer.__dict__['levels'].get(name)
+            if name := layer.__dict__['levels'].get(name):
+                return name
 
     @classmethod
     def find_name(cls, lvl):
@@ -423,8 +425,8 @@ def init_cli_layers():
 
 class Commander:
     def __init__(self, config, log):
-        self.config = config
-        self.log = log
+        self.config: Config = config
+        self.log: Log = log
 
     def calc(self):
         sleep_for = calculate_amount_of_sleep(self.log.content, self.config.rest_per_day)
@@ -447,6 +449,15 @@ class Commander:
     def leave(self):
         exit("Bye")
 
+def position(lvl: Level):
+    def decorator_position(func):
+        @functools.wraps(func)
+        def wrapper_position(*args, **kwargs):
+            for _ in range(num_times):
+                value = func(*args, **kwargs)
+            return value
+        return wrapper_position
+    return decorator_position
 
 def cli(commander, case = None):
 
@@ -513,6 +524,7 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
         total = timedelta()
         for i in range(1, len(records), 2):
+            assert records[i+1].time > records[i].time
             print('Awake from', records[i].time, "to", records[i+1].time, 'Delta:', records[i+1].time - records[i].time)
             total += records[i+1].time - records[i].time
 
@@ -548,13 +560,16 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 1.4 * aDay):
 
     return result
 
+
+
+
 def main():
-    def run_while_jumps(f, *args, **kwags):
+    def run_while_jumps(f, *args, **kwargs):
         while True:
-            if not isinstance((res := f(*args, **kwags)), Level):
+            if not isinstance((res := f(*args, **kwargs)), Level):
                 break
             else:
-                kwags['case'] = res
+                kwargs['case'] = res
 
     init_cli_layers()
     config = Config()
