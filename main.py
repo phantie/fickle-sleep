@@ -433,11 +433,10 @@ class Level:
         self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
 
     def __str__(self):
-        return f"{self.__class__.__name__}({str(self.levels)[1:-1] if len(self.levels)>1 else self.levels[0]})"
+        return f"{self.__class__.__name__}({ ':'.join(map(lambda self: str(self), self.levels)) if len(self.levels)>1 else self.levels[0]})"
 
     def __repr__(self):
         return str(self)
-
     def __bool__(self):
         return self.levels != (0,)
 
@@ -458,7 +457,6 @@ class Level:
 
     def back(self):
         return self.parent.parent
-
 
 
 class Route:
@@ -494,6 +492,17 @@ class Route:
         assert cls.contents.get(str(lvl)) is None, "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
 
+@Route.new(Level(0))
+def welcoming(config, log):
+    print(f"\nGood {Clock.part_of_day()}. Please select:")
+    case = show_and_select([
+        "calculate sleep duration",
+        "correct last sleep session",
+        "update configuration",
+        "exit",
+    ])
+
+    return case
 
 @Route.new(Level(1))
 def calc(config, log):
@@ -554,22 +563,10 @@ def show_and_select(choices):
     return input_until_correct("Enter", "Try again", parse_cli_input, choices = len(choices))
 
 def cli(config, log, case = Level(0)):
-
-    if not case:
-        print(f"\nGood {Clock.part_of_day()}. Please select:")
-        case = show_and_select([
-            "calculate sleep duration",
-            "correct last sleep session",
-            "update configuration",
-            "exit",
-        ])
-
-
     if route := Route.get(case):
         return route(config, log)
     else:
         raise Exception("Nonexsitent route", case)
-
 
 
 def main():
