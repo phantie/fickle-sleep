@@ -84,7 +84,7 @@ class LogRow:
         return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
 
     @staticmethod
-    def parse(row, failproof=False):
+    def parse(row: str, failproof=False):
         try:
             state, time = row.rstrip('\n').split(maxsplit=1)
             for state_name, _state in Act.__members__.items():
@@ -114,9 +114,8 @@ class Config(File):
         if not self.exists():
             self.create()
 
-        parsed_config_data = self.get()
-
-        self.rest_per_day = parsed_config_data['rest_per_day']
+        self.get_data()
+        self.rest_per_day = self.data['rest_per_day']
 
 
     def load(self):
@@ -149,7 +148,7 @@ class Config(File):
     def update(self):
         self.create()
 
-    def get(self):
+    def get_data(self):
         def notify_update_load_config():
             print('! Config file is corrupped')
             self.update()
@@ -168,7 +167,7 @@ class Config(File):
         else:
             data['rest_per_day'] = rpd
 
-        return data
+        self.data = data
 
 class Log(File):
     FILE__NAME = "log.txt"
@@ -321,130 +320,6 @@ def parse_cli_input(n: str, choices: int):
         if num in range(1, choices + 1):
             return Level(num)
 
-class Clock:
-    hours = list(range(0, 25))
-
-    @classmethod
-    def between(cls, start, end):
-        if start <= end:
-            return cls.hours[start:end+1]
-        else:
-            return cls.hours[start:] + cls.hours[:end+1]
-
-    @classmethod
-    def part_of_day(cls):
-        this_hour = now().hour
-
-        if this_hour in cls.between(4, 11):
-            return "morning"
-        elif this_hour in cls.between(12, 16):
-            return "afternoon"
-        elif this_hour in cls.between(17, 20):
-            return "evening"
-        elif this_hour in cls.between(21, 3):
-            return "night"
-
-class Level:
-    def __init__(self, *sub_levels):
-        self.levels: list = sub_levels
-        self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
-
-    def __str__(self):
-        return f"{self.__class__.__name__}({self.levels if len(self.levels)>1 else self.levels[0]})"
-
-    def __repr__(self):
-        return str(self)
-
-    def __add__(self, other):
-        if isinstance(other, Level):
-            return Level(self.levels + other.levels)
-        else:
-            raise NotImplemented
-
-    def __eq__(self, other):
-        if isinstance(other, Level):
-            return self.levels == other.levels
-        else:
-            raise NotImplemented
-
-
-class Route:
-    contents = {}
-
-    @classmethod
-    def set(cls, lvl, func):
-        cls.contents[str(lvl)] = func
-
-    @classmethod
-    def get(cls, lvl):
-        return cls.contents.get(str(lvl))
-
-    @classmethod
-    def new(cls, lvl):
-        def decorator_route(func):
-            cls.set(lvl, func)
-            @functools.wraps(func)
-            def wrapper_route(*args, **kwargs):
-                return func(*args, **kwargs)
-            return wrapper_route
-        return decorator_route
-
-
-@Route.new(Level(1))
-def calc(config, log):
-    sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
-
-    if sleep_for < timedelta():
-        print("You should not sleep for at least", abs(sleep_for))
-    else:
-        asleep, awake = get_asleep_awake(sleep_for)
-        if ALTER_LOG:
-            log.append(asleep)
-            log.append(awake)
-
-        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
-
-    return sleep_for
-
-@Route.new(Level(2))
-def correct(config, log):
-    return Level(2, 1)
-
-@Route.new(Level(2, 1))
-def jesus(config, log):
-    print("jesus?")
-    return Level(4)
-
-@Route.new(Level(3))
-def update_conf(config, log):
-    config.update()
-
-@Route.new(Level(4))
-def leave(config, log):
-    exit("Bye")
-
-
-def cli(config, log, case = None):
-
-    if not case:
-        print(
-        f"Good {Clock.part_of_day()}. Please select:\n"
-        "1. Calculate sleep duration.\n"
-        "2. Correct last sleep session.\n"
-        "3. Update configuration.\n"
-        "4. Exit.\n"
-        )
-    
-    case = case or input_until_correct(
-                                "Enter", "Try again", 
-                                parser = parse_cli_input,
-                                choices = 4)
-
- 
-    if route := Route.get(case):
-        return route(config, log)
-
-
 def lazy_yield(x) -> callable:
     return lambda: x
 
@@ -517,16 +392,132 @@ def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 4 * aDay):
         print("Slept", latest_sleep_amount)
         print("Was awake", latest_awake_amount)
 
-        # print("Delta:", end - start)
-        # print("Calculated:", latest_sleep_amount + latest_awake_amount)
-
-        # print(latest_sleep_amount, rest_per_day, time_limiter / aDay, rest_per_day / aDay)
         result = ((rest_per_day / aDay) * gap - latest_sleep_amount) / (1 - (rest_per_day / aDay))
     else:
         result = rest_per_day
 
     return result
 
+
+class Clock:
+    hours = list(range(0, 25))
+
+    @classmethod
+    def between(cls, start, end):
+        if start <= end:
+            return cls.hours[start:end+1]
+        else:
+            return cls.hours[start:] + cls.hours[:end+1]
+
+    @classmethod
+    def part_of_day(cls):
+        this_hour = now().hour
+
+        if this_hour in cls.between(4, 11):
+            return "morning"
+        elif this_hour in cls.between(12, 16):
+            return "afternoon"
+        elif this_hour in cls.between(17, 20):
+            return "evening"
+        elif this_hour in cls.between(21, 3):
+            return "night"
+
+class Level:
+    def __init__(self, *sub_levels):
+        self.levels: list = sub_levels
+        self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
+
+    def __str__(self):
+        return f"{self.__class__.__name__}({self.levels if len(self.levels)>1 else self.levels[0]})"
+
+    def __repr__(self):
+        return str(self)
+
+    def __add__(self, other):
+        if isinstance(other, Level):
+            return Level(self.levels + other.levels)
+        else:
+            raise NotImplemented
+
+    def __eq__(self, other):
+        if isinstance(other, Level):
+            return self.levels == other.levels
+        else:
+            raise NotImplemented
+
+
+class Route:
+    contents = {}
+
+    @classmethod
+    def new(cls, lvl):
+        assert isinstance(lvl, Level)
+        def decorator_route(func):
+            cls._set(lvl, func)
+            @functools.wraps(func)
+            def wrapper_route(*args, **kwargs):
+                return func(*args, **kwargs)
+            return wrapper_route
+        return decorator_route
+
+    @classmethod
+    def get(cls, lvl):
+        return cls.contents.get(str(lvl))
+
+    @classmethod
+    def _set(cls, lvl, func):
+        cls.contents[str(lvl)] = func
+
+
+@Route.new(Level(1))
+def calc(config, log):
+    sleep_for = calculate_amount_of_sleep(log.content, config.rest_per_day)
+
+    if sleep_for < timedelta():
+        print("You should not sleep for at least", abs(sleep_for))
+    else:
+        if ALTER_LOG:
+            asleep, awake = get_asleep_awake(sleep_for)
+            log.append(asleep)
+            log.append(awake)
+
+        print("\nSleep for", sleep_for, "\nSet alarm to", now() + sleep_for)
+
+    return sleep_for
+
+@Route.new(Level(2))
+def correct(config, log):
+    return Level(2, 1)
+
+@Route.new(Level(2, 1))
+def jesus(config, log):
+    print("jesus?")
+    return Level(4)
+
+@Route.new(Level(3))
+def update_conf(config, log):
+    config.update()
+
+@Route.new(Level(4))
+def leave(config, log):
+    exit("Bye")
+
+
+def cli(config, log, case = None):
+
+    if not case:
+        print(
+        f"Good {Clock.part_of_day()}. Please select:\n"
+        "1. Calculate sleep duration.\n"
+        "2. Correct last sleep session.\n"
+        "3. Update configuration.\n"
+        "4. Exit.\n"
+        )
+    
+    case = case or input_until_correct("Enter", "Try again", parse_cli_input, choices = 4)
+ 
+    if route := Route.get(case):
+        return route(config, log)
 
 
 
