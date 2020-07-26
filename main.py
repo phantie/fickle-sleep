@@ -270,16 +270,17 @@ def now():
 
 def input_until_correct(message, subsequent_try_message, /, parser: callable, **kwargs):
     def wrap_message(message):
-        return message + ": "
+        return "   " + message + ": "
 
     lap = 0
     message = wrap_message(message)
     subsequent_try_message = wrap_message(subsequent_try_message)
     while True:
         if (parsed := parser(input(message), **kwargs)) is not None:
+            print()
             return parsed
         lap += 1
-        if lap:
+        if lap == 1:
             message = subsequent_try_message
 
 def receive_timedelta() -> timedelta:
@@ -422,20 +423,30 @@ class Clock:
         elif this_hour in cls.between(21, 3):
             return "night"
 
+
+
 class Level:
+
     def __init__(self, *sub_levels):
+        assert all(isinstance(el, int) for el in sub_levels)
         self.levels: list = sub_levels
         self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
 
     def __str__(self):
-        return f"{self.__class__.__name__}({self.levels if len(self.levels)>1 else self.levels[0]})"
+        return f"{self.__class__.__name__}({str(self.levels)[1:-1] if len(self.levels)>1 else self.levels[0]})"
 
     def __repr__(self):
         return str(self)
 
+    def __bool__(self):
+        return self.levels != (0,)
+
     def __add__(self, other):
         if isinstance(other, Level):
-            return Level(self.levels + other.levels)
+            if not self:
+                return other
+            else:
+                return Level(*(self.levels + other.levels))
         else:
             raise NotImplemented
 
@@ -445,6 +456,10 @@ class Level:
         else:
             raise NotImplemented
 
+    def back(self):
+        return self.parent.parent
+
+
 
 class Route:
     contents = {}
@@ -453,11 +468,21 @@ class Route:
     def new(cls, lvl):
         assert isinstance(lvl, Level)
         def decorator_route(func):
-            cls._set(lvl, func)
             @functools.wraps(func)
             def wrapper_route(*args, **kwargs):
-                return func(*args, **kwargs)
+                if isinstance((res := func(*args, **kwargs)), Level):
+                    return lvl + res
+                elif res is Level.back:
+                    if (second_res := lvl.back()) is None:
+                        return Level(0)
+                    else:
+                        return second_res
+                else:
+                    return res
+                
+            cls._set(lvl, wrapper_route)
             return wrapper_route
+
         return decorator_route
 
     @classmethod
@@ -466,6 +491,7 @@ class Route:
 
     @classmethod
     def _set(cls, lvl, func):
+        assert cls.contents.get(str(lvl)) is None, "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
 
 
@@ -487,12 +513,30 @@ def calc(config, log):
 
 @Route.new(Level(2))
 def correct(config, log):
-    return Level(2, 1)
+    case = show_and_select([
+        "overslept",
+        "underslept",
+        "both",
+        "back",
+    ])
+
+    return case
 
 @Route.new(Level(2, 1))
-def jesus(config, log):
-    print("jesus?")
-    return Level(4)
+def overslept(config, log):
+    print("you overslept")
+
+@Route.new(Level(2, 2))
+def underslept(config, log):
+    print("you underslept")
+
+@Route.new(Level(2, 3))
+def overslept_and_underslept(config, log):
+    print("you overslept and underslept")
+
+@Route.new(Level(2, 4))
+def correct_back(config, log):
+    return Level.back
 
 @Route.new(Level(3))
 def update_conf(config, log):
@@ -503,21 +547,28 @@ def leave(config, log):
     exit("Bye")
 
 
-def cli(config, log, case = None):
+def show_and_select(choices):
+    for i, c in enumerate(choices):
+        print(f"{i+1}. {c.capitalize()}.")
+
+    return input_until_correct("Enter", "Try again", parse_cli_input, choices = len(choices))
+
+def cli(config, log, case = Level(0)):
 
     if not case:
-        print(
-        f"Good {Clock.part_of_day()}. Please select:\n"
-        "1. Calculate sleep duration.\n"
-        "2. Correct last sleep session.\n"
-        "3. Update configuration.\n"
-        "4. Exit.\n"
-        )
-    
-    case = case or input_until_correct("Enter", "Try again", parse_cli_input, choices = 4)
- 
+        print(f"\nGood {Clock.part_of_day()}. Please select:")
+        case = show_and_select([
+            "calculate sleep duration",
+            "correct last sleep session",
+            "update configuration",
+            "exit",
+        ])
+
+
     if route := Route.get(case):
         return route(config, log)
+    else:
+        raise Exception("Nonexsitent route", case)
 
 
 
