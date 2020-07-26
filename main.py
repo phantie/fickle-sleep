@@ -321,6 +321,12 @@ def parse_cli_input(n: str, choices: int):
         if num in range(1, choices + 1):
             return Level(num)
 
+def show_and_select(choices):
+    for i, c in enumerate(choices):
+        print(f"{i+1}. {c.capitalize()}.")
+
+    return input_until_correct("Enter", "Try again", parse_cli_input, choices = len(choices))
+
 def lazy_yield(x) -> callable:
     return lambda: x
 
@@ -433,10 +439,11 @@ class Level:
         self.parent = Level(*sub_levels[:-1]) if len(sub_levels) > 1 else None
 
     def __str__(self):
-        return f"{self.__class__.__name__}({ ':'.join(map(lambda self: str(self), self.levels)) if len(self.levels)>1 else self.levels[0]})"
+        return f"{self.__class__.__name__}({':'.join(map(lambda self: str(self), self.levels))})"
 
     def __repr__(self):
         return str(self)
+
     def __bool__(self):
         return self.levels != (0,)
 
@@ -455,9 +462,6 @@ class Level:
         else:
             raise NotImplemented
 
-    def back(self):
-        return self.parent.parent
-
 
 class Route:
     contents = {}
@@ -470,8 +474,8 @@ class Route:
             def wrapper_route(*args, **kwargs):
                 if isinstance((res := func(*args, **kwargs)), Level):
                     return lvl + res
-                elif res is Level.back:
-                    if (second_res := lvl.back()) is None:
+                elif res is Route.back:
+                    if (second_res := Route.back(lvl)) is None:
                         return Level(0)
                     else:
                         return second_res
@@ -491,6 +495,9 @@ class Route:
     def _set(cls, lvl, func):
         assert cls.contents.get(str(lvl)) is None, "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
+
+    def back(lvl: Level):
+        return lvl.parent.parent
 
 @Route.new(Level(0))
 def welcoming(config, log):
@@ -545,7 +552,7 @@ def overslept_and_underslept(config, log):
 
 @Route.new(Level(2, 4))
 def correct_back(config, log):
-    return Level.back
+    return Route.back
 
 @Route.new(Level(3))
 def update_conf(config, log):
@@ -555,12 +562,6 @@ def update_conf(config, log):
 def leave(config, log):
     exit("Bye")
 
-
-def show_and_select(choices):
-    for i, c in enumerate(choices):
-        print(f"{i+1}. {c.capitalize()}.")
-
-    return input_until_correct("Enter", "Try again", parse_cli_input, choices = len(choices))
 
 def cli(config, log, case = Level(0)):
     if route := Route.get(case):
