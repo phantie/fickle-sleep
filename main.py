@@ -18,7 +18,7 @@ timedelta_fmt = "%H:%M:%S"
 
 
 print_dc = deepcopy(print)
-def _print(*args, **kwargs):
+def print(*args, **kwargs):
     _args = []
     for el in args:
         if isinstance(el, float):
@@ -46,11 +46,10 @@ def _print(*args, **kwargs):
 
     print_dc(*_args, **kwargs)
 
-print = _print
- 
 
 class File(ABC):
 
+    @property
     def exists(self):
         return path.exists(self.FILE__NAME)
 
@@ -111,7 +110,7 @@ class Config(File):
     FILE__NAME = "conf.toml"
 
     def __init__(self):
-        if not self.exists():
+        if not self.exists:
             self.create()
 
         self.get_data()
@@ -119,7 +118,7 @@ class Config(File):
 
 
     def load(self):
-        assert self.exists()
+        assert self.exists
         return toml.load(self.FILE__NAME)
 
     @staticmethod
@@ -175,14 +174,14 @@ class Log(File):
 
 
     def __init__(self):
-        if not self.exists():
+        if not self.exists:
             self.create()
         
         self.get_content()
         self.sync()
 
     def load(self):
-        assert self.exists()
+        assert self.exists
         with self.open('r') as log_file:
             return log_file.readlines()
 
@@ -227,7 +226,7 @@ class Log(File):
     ### It won`t save againts drastical
     ### manual log interruption. So don`t.
     def repair(self):
-        assert self.exists()
+        assert self.exists
 
         repaired_records = []
 
