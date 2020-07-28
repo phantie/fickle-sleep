@@ -193,7 +193,7 @@ class Log(File):
         try:
             self.content = list(LogRow.parse(row) for row in self.load())
 
-            if self.content:
+            if not self.empty:
                 assert self.check_pair(self.last_session)
         except:
             print("! Log seems to be corrupted")
@@ -206,6 +206,9 @@ class Log(File):
 
             else: exit()
 
+    @property
+    def empty(self):
+        return not bool(self.content)
 
     def append(self, log_row: LogRow):
         assert isinstance(log_row, LogRow)
@@ -239,7 +242,7 @@ class Log(File):
         
         
     @staticmethod
-    def check_pair(pair):
+    def check_pair(pair: (LogRow, LogRow)):
         asleep, awake = pair
         return asleep.state is Act.asleep and awake.state is Act.awake
 
@@ -254,7 +257,7 @@ class Log(File):
 
     @property
     def last_session(self):
-        if len(self.content) > 1:
+        if not self.empty:
             result = self.content[-2:]
             assert self.check_pair(result)
         else:
