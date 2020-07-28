@@ -18,7 +18,7 @@ timedelta_fmt = "%H:%M:%S"
 
 
 print_dc = deepcopy(print)
-def _print(*args):
+def _print(*args, **kwargs):
     _args = []
     for el in args:
         if isinstance(el, float):
@@ -44,7 +44,7 @@ def _print(*args):
 
         _args.append(processed)
 
-    print_dc(*_args)
+    print_dc(*_args, **kwargs)
 
 print = _print
  
@@ -303,7 +303,7 @@ def input_until_correct(message, subsequent_try_message, /, parser: callable, **
         if lap == 1:
             message = subsequent_try_message
 
-def get_confirmation(message = "Correct?") -> bool:
+def get_confirmation(message = "? Correct") -> bool:
     def parse_confirmation(arg):
         if arg == "y" or arg == "yes":
             return True
@@ -497,12 +497,12 @@ class Level:
         else:
             raise NotImplemented
 
-
+@dataclass
 class Route:
     contents = {}
 
-    def __init__(self, dest: Level):
-        self.dest = dest
+    destination: Level
+    message: str = None
 
     @classmethod
     def new(cls, lvl):
@@ -513,7 +513,10 @@ class Route:
                 if isinstance((res := func(*args, **kwargs)), Level):
                     return lvl + res
                 elif isinstance(res, Route):
-                    return res.dest
+                    if transition_message := res.message:
+                        print(transition_message, end="\n\n")
+
+                    return res.destination
                 else:
                     return res
                 
@@ -566,8 +569,8 @@ def correct(config, log):
     case = show_and_select([
         "woke up early",
         "woke up late",
-        "felt asleep early",
-        "felt asleep late",
+        "fell asleep early",
+        "fell asleep late",
         "back",
     ])
 
@@ -592,7 +595,7 @@ def overslept(config, log):
 
     log.alter_last_session(alter)
 
-
+    return Route(Level(2), message = "You can alse tune the time when you fell asleep")
 
 
 @Route.new(Level(2, 2))
@@ -609,17 +612,19 @@ def underslept(config, log):
             ls_end.time = new_dt
             return ls_start, ls_end
 
-
     log.alter_last_session(alter)
 
+    return Route(Level(2), message = "You can alse tune the time when you fell asleep")
+
+
 @Route.new(Level(2, 3))
-def felt_asleep_early(config, log):
+def fell_asleep_early(config, log):
     def alter(ls_start, ls_end):
-        print("... You felt asleep early by")
+        print("... You fell asleep early by")
         
         new_dt = alter_record_time_by_td(ls_start, '__sub__')
 
-        print("You felt asleep", new_dt)
+        print("You fell asleep", new_dt)
 
         if get_confirmation():
             ls_start.time = new_dt
@@ -628,15 +633,16 @@ def felt_asleep_early(config, log):
 
     log.alter_last_session(alter)
 
+    return Route(Level(2), message = "You can alse tune the time when you woke up")
 
 @Route.new(Level(2, 4))
-def felt_asleep_late(config, log):
+def fell_asleep_late(config, log):
     def alter(ls_start, ls_end):
-        print("... You felt asleep late by")
+        print("... You fell asleep late by")
         
         new_dt = alter_record_time_by_td(ls_start, '__add__')
 
-        print("You felt asleep at", new_dt)
+        print("You fell asleep at", new_dt)
 
         if get_confirmation():
             ls_start.time = new_dt
@@ -645,6 +651,7 @@ def felt_asleep_late(config, log):
 
     log.alter_last_session(alter)
 
+    return Route(Level(2), message = "You can alse tune the time when you woke up")
 
 
 @Route.new(Level(2, 5))
