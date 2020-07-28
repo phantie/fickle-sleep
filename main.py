@@ -169,6 +169,7 @@ class Config(File):
 
         self.data = data
 
+
 class Log(File):
     FILE__NAME = "log.txt"
 
@@ -196,15 +197,7 @@ class Log(File):
                 assert self.content[-1].state is Act.awake
         except:
             print("! Log seems to be corrupted")
-            print("? Try to repair automatically")
-
-            def parse_confirmation(arg):
-                if arg == "y" or arg == "yes":
-                    return True
-                elif arg == "n" or arg == "no":
-                    return False
-
-            confirm = input_until_correct("y|n", "yes|no", parse_confirmation)
+            confirm = get_confirmation("? Try to repair automatically")
 
             if confirm:
                 self.repair()
@@ -245,8 +238,35 @@ class Log(File):
         self.content = repaired_records
         
         
-    def alter_last_session(self):
-        pass
+    @staticmethod
+    def check_pair(pair):
+        asleep, awake = pair
+        return asleep.state is Act.asleep and awake.state is Act.awake
+
+    def alter_last_session(self, f: callable):
+        ls_start, ls_end = self.last_session
+        while True:
+            if (changed_session := f(ls_start, ls_end)) is not None:
+                self.last_session = changed_session
+                break
+
+        self.last_session = ls_start, ls_end
+
+    @property
+    def last_session(self):
+        if len(self.content) > 1:
+            result = self.content[-2:]
+            assert self.check_pair(result)
+        else:
+            result = []
+        
+        return result
+
+    @last_session.setter
+    def last_session(self, tup):
+        assert self.check_pair(tup)
+        self.content[-2] = tup[0]
+        self.content[-1] = tup[1]
 
 class Round:
     @staticmethod
@@ -283,11 +303,22 @@ def input_until_correct(message, subsequent_try_message, /, parser: callable, **
         if lap == 1:
             message = subsequent_try_message
 
+def get_confirmation(message = "Correct?") -> bool:
+    def parse_confirmation(arg):
+        if arg == "y" or arg == "yes":
+            return True
+        elif arg == "n" or arg == "no":
+            return False
+
+    print(message)
+    return input_until_correct("y|n", "yes|no", parse_confirmation)
+
 def receive_timedelta() -> timedelta:
     def input_hours_minutes() -> (str, str):
         return input('\tHours: '), input('\tMinutes: ')
 
     h, m = input_hours_minutes()
+    print()
     return parse_time_period(h, m)
 
 def parse_time_period(hours: str, minutes: str) -> timedelta:
@@ -336,6 +367,10 @@ def get_asleep_awake(duration: timedelta, start: callable = now):
     asleep = LogRow(state=Act.asleep, time=start)
     awake = LogRow(state=Act.awake, time=end)
     return asleep, awake
+
+def alter_record_time_by_td(record, fname: str):
+    td = receive_timedelta()
+    return getattr(record.time, fname)(td)
 
 def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 4 * aDay):
     
@@ -466,6 +501,9 @@ class Level:
 class Route:
     contents = {}
 
+    def __init__(self, dest: Level):
+        self.dest = dest
+
     @classmethod
     def new(cls, lvl):
         assert isinstance(lvl, Level)
@@ -474,11 +512,8 @@ class Route:
             def wrapper_route(*args, **kwargs):
                 if isinstance((res := func(*args, **kwargs)), Level):
                     return lvl + res
-                elif res is Route.back:
-                    if (second_res := Route.back(lvl)) is None:
-                        return Level(0)
-                    else:
-                        return second_res
+                elif isinstance(res, Route):
+                    return res.dest
                 else:
                     return res
                 
@@ -496,8 +531,7 @@ class Route:
         assert cls.contents.get(str(lvl)) is None, "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
 
-    def back(lvl: Level):
-        return lvl.parent.parent
+
 
 @Route.new(Level(0))
 def welcoming(config, log):
@@ -530,29 +564,92 @@ def calc(config, log):
 @Route.new(Level(2))
 def correct(config, log):
     case = show_and_select([
-        "overslept",
-        "underslept",
-        "both",
+        "woke up early",
+        "woke up late",
+        "felt asleep early",
+        "felt asleep late",
         "back",
     ])
 
     return case
 
+
+
 @Route.new(Level(2, 1))
 def overslept(config, log):
-    print("you overslept")
+
+    def alter(ls_start, ls_end):
+        print("... You overslept by")
+        
+        new_dt = alter_record_time_by_td(ls_end, '__add__')
+
+        print("You awoke at", new_dt)
+
+        if get_confirmation():
+            ls_end.time = new_dt
+            return ls_start, ls_end
+
+
+    log.alter_last_session(alter)
+
+
+
 
 @Route.new(Level(2, 2))
 def underslept(config, log):
-    print("you underslept")
+
+    def alter(ls_start, ls_end):
+        print("... You underslept by")
+        
+        new_dt = alter_record_time_by_td(ls_end, '__sub__')
+
+        print("You awoke at", new_dt)
+
+        if get_confirmation():
+            ls_end.time = new_dt
+            return ls_start, ls_end
+
+
+    log.alter_last_session(alter)
 
 @Route.new(Level(2, 3))
-def overslept_and_underslept(config, log):
-    print("you overslept and underslept")
+def felt_asleep_early(config, log):
+    def alter(ls_start, ls_end):
+        print("... You felt asleep early by")
+        
+        new_dt = alter_record_time_by_td(ls_start, '__sub__')
+
+        print("You felt asleep", new_dt)
+
+        if get_confirmation():
+            ls_start.time = new_dt
+            return ls_start, ls_end
+
+
+    log.alter_last_session(alter)
+
 
 @Route.new(Level(2, 4))
+def felt_asleep_late(config, log):
+    def alter(ls_start, ls_end):
+        print("... You felt asleep late by")
+        
+        new_dt = alter_record_time_by_td(ls_start, '__add__')
+
+        print("You felt asleep at", new_dt)
+
+        if get_confirmation():
+            ls_start.time = new_dt
+            return ls_start, ls_end
+
+
+    log.alter_last_session(alter)
+
+
+
+@Route.new(Level(2, 5))
 def correct_back(config, log):
-    return Route.back
+    return Route(Level(0))
 
 @Route.new(Level(3))
 def update_conf(config, log):
