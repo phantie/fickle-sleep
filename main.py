@@ -194,7 +194,7 @@ class Log(File):
             self.content = list(LogRow.parse(row) for row in self.load())
 
             if self.content:
-                assert self.content[-1].state is Act.awake
+                assert self.check_pair(self.last_session)
         except:
             print("! Log seems to be corrupted")
             confirm = get_confirmation("? Try to repair automatically")
@@ -541,9 +541,9 @@ def welcoming(config, log):
     print(f"\nGood {Clock.part_of_day()}. Please select:")
     case = show_and_select([
         "calculate sleep duration",
-        "correct last sleep session",
+        "tune the previous sleep session",
         "update configuration",
-        "exit",
+        "quit",
     ])
 
     return case
@@ -582,7 +582,7 @@ def correct(config, log):
 def overslept(config, log):
 
     def alter(ls_start, ls_end):
-        print("... You overslept by")
+        print("? You overslept by")
         
         new_dt = alter_record_time_by_td(ls_end, '__add__')
 
@@ -595,14 +595,14 @@ def overslept(config, log):
 
     log.alter_last_session(alter)
 
-    return Route(Level(2), message = "You can alse tune the time when you fell asleep")
+    return Route(Level(2), message = "You can also tune the time when you fell asleep")
 
 
 @Route.new(Level(2, 2))
 def underslept(config, log):
 
     def alter(ls_start, ls_end):
-        print("... You underslept by")
+        print("? You underslept by")
         
         new_dt = alter_record_time_by_td(ls_end, '__sub__')
 
@@ -614,13 +614,13 @@ def underslept(config, log):
 
     log.alter_last_session(alter)
 
-    return Route(Level(2), message = "You can alse tune the time when you fell asleep")
+    return Route(Level(2), message = "You can also tune the time when you fell asleep")
 
 
 @Route.new(Level(2, 3))
 def fell_asleep_early(config, log):
     def alter(ls_start, ls_end):
-        print("... You fell asleep early by")
+        print("? You fell asleep early by")
         
         new_dt = alter_record_time_by_td(ls_start, '__sub__')
 
@@ -633,12 +633,12 @@ def fell_asleep_early(config, log):
 
     log.alter_last_session(alter)
 
-    return Route(Level(2), message = "You can alse tune the time when you woke up")
+    return Route(Level(2), message = "You can also tune the time when you woke up")
 
 @Route.new(Level(2, 4))
 def fell_asleep_late(config, log):
     def alter(ls_start, ls_end):
-        print("... You fell asleep late by")
+        print("? You fell asleep late by")
         
         new_dt = alter_record_time_by_td(ls_start, '__add__')
 
@@ -651,7 +651,7 @@ def fell_asleep_late(config, log):
 
     log.alter_last_session(alter)
 
-    return Route(Level(2), message = "You can alse tune the time when you woke up")
+    return Route(Level(2), message = "You can also tune the time when you woke up")
 
 
 @Route.new(Level(2, 5))
