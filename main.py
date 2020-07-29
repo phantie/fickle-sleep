@@ -46,6 +46,8 @@ def print(*args, **kwargs):
 
     print_dc(*_args, **kwargs)
 
+def now():
+    return Round.datetime(dt.now())
 
 class File(ABC):
 
@@ -79,7 +81,7 @@ class LogRow:
     state: Act
     time: dt
 
-    def as_str(self):
+    def __str__(self):
         return f'{self.state.value} {self.time.strftime(datetime_fmt)}\n'
 
     @staticmethod
@@ -101,6 +103,14 @@ class LogRow:
                 return ""
             else:
                 raise
+
+    @classmethod
+    def get_asleep_awake_pair(cls, duration: timedelta, start: callable = now):
+        start = start()
+        end = start + duration
+        asleep = cls(state=Act.asleep, time=start)
+        awake = cls(state=Act.awake, time=end)
+        return asleep, awake
 
 
 @dataclass
@@ -153,6 +163,10 @@ class Config(File):
             self.update()
             data = self.load()
             return data
+
+        def parseHM_(s):
+            h, m, _ = s.split(':')
+            return parse_time_period(h, m)
                 
         data = self.load()
 
@@ -214,13 +228,13 @@ class Log(File):
         self.content.append(log_row)
 
         with self.open('a') as log_file:
-            log_file.write(log_row.as_str())
+            log_file.write(str(log_row))
 
     def sync(self):
         assert hasattr(self, "content")
 
         with self.open('w') as log_file:
-            log_file.writelines(map(lambda row: row.as_str(), self.content))
+            log_file.writelines(map(lambda row: str(row), self.content))
 
 
     ### It won`t save againts drastical
@@ -246,6 +260,8 @@ class Log(File):
         return asleep.state is Act.asleep and awake.state is Act.awake
 
     def alter_last_session(self, f: callable):
+        assert self.last_session is not None
+
         ls_start, ls_end = self.last_session
         while True:
             if (changed_session := f(ls_start, ls_end)) is not None:
@@ -260,15 +276,22 @@ class Log(File):
             result = self.content[-2:]
             assert self.check_pair(result)
         else:
-            result = []
+            result = None
         
         return result
 
     @last_session.setter
     def last_session(self, tup):
+        assert not self.empty
         assert self.check_pair(tup)
         self.content[-2] = tup[0]
         self.content[-1] = tup[1]
+
+    def print(self):
+        print(": Log")
+        for row in self.content:
+            print(' ', row, end='')
+
 
 class Round:
     @staticmethod
@@ -287,8 +310,7 @@ class Round:
         return d.replace(microsecond=0, second=0)
 
 
-def now():
-    return Round.datetime(dt.now())
+
 
 def input_until_correct(message, subsequent_try_message, /, parser: callable, **kwargs):
     def wrap_message(message):
@@ -307,9 +329,9 @@ def input_until_correct(message, subsequent_try_message, /, parser: callable, **
 
 def get_confirmation(message = "? Correct") -> bool:
     def parse_confirmation(arg):
-        if arg == "y" or arg == "yes":
+        if arg in ("y", "yes"):
             return True
-        elif arg == "n" or arg == "no":
+        elif arg in ("n", "no"):
             return False
 
     print(message)
@@ -340,35 +362,39 @@ def parse_time_period(hours: str, minutes: str) -> timedelta:
         return tp
 
 
-def parseHM_(s):
-    h, m, _ = s.split(':')
-    return parse_time_period(h, m)
+
+def show_and_select(choices, exclude = []):
+    def parse_cli_input(n: str, choices: int):
+        def parse_int(n: str):
+            if n.isnumeric():
+                return int(n)
+
+        if (num := parse_int(n)) is not None:
+            if num in range(1, choices + 1):
+                return num
+
+    assert len(choices) >= len(exclude)
+    assert len(exclude) == len(set(exclude))
+    assert all(el in range(1, len(choices) + 1) for el in exclude)
 
 
-def parse_cli_input(n: str, choices: int):
-    def parse_int(n: str):
-        if n.isnumeric():
-            return int(n)
+    left_indices = list(sorted(set(range(len(choices))) - set(i-1 for i in exclude)))
+    left = []
 
-    if (num := parse_int(n)) is not None:
-        if num in range(1, choices + 1):
-            return Level(num)
+    for el in left_indices:
+        left.append(choices[el])
 
-def show_and_select(choices):
-    for i, c in enumerate(choices):
+    for i, c in enumerate(left):
         print(f"{i+1}. {c.capitalize()}.")
 
-    return input_until_correct("Enter", "Try again", parse_cli_input, choices = len(choices))
+    res = input_until_correct("Enter", "Try again", parse_cli_input, choices = len(left))
+    return Level(left_indices[res - 1] + 1)
+
 
 def lazy_yield(x) -> callable:
     return lambda: x
 
-def get_asleep_awake(duration: timedelta, start: callable = now):
-    start = start()
-    end = start + duration
-    asleep = LogRow(state=Act.asleep, time=start)
-    awake = LogRow(state=Act.awake, time=end)
-    return asleep, awake
+
 
 def alter_record_time_by_td(record, fname: str):
     td = receive_timedelta()
@@ -541,12 +567,18 @@ class Route:
 @Route.new(Level(0))
 def welcoming(config, log):
     print(f"\nGood {Clock.part_of_day()}. Please select:")
+
+    exclude = []
+    if log.empty:
+        exclude.append(2) 
+
+
     case = show_and_select([
         "calculate sleep duration",
         "tune the previous sleep session",
         "update configuration",
         "quit",
-    ])
+        ], exclude=exclude)
 
     return case
 
@@ -558,7 +590,7 @@ def calc(config, log):
         print("You should not sleep for at least", abs(sleep_for))
     else:
         if ALTER_LOG:
-            asleep, awake = get_asleep_awake(sleep_for)
+            asleep, awake = LogRow.get_asleep_awake_pair(sleep_for)
             log.append(asleep)
             log.append(awake)
 
@@ -593,7 +625,6 @@ def overslept(config, log):
         if get_confirmation():
             ls_end.time = new_dt
             return ls_start, ls_end
-
 
     log.alter_last_session(alter)
 
