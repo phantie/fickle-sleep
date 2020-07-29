@@ -104,6 +104,10 @@ class LogRow:
             else:
                 raise
 
+    def alter_time_by_td(self, fname: str):
+        td = receive_timedelta()
+        return getattr(self.time, fname)(td)
+
     @classmethod
     def get_asleep_awake_pair(cls, duration: timedelta, start: callable = now):
         start = start()
@@ -395,11 +399,6 @@ def lazy_yield(x) -> callable:
     return lambda: x
 
 
-
-def alter_record_time_by_td(record, fname: str):
-    td = receive_timedelta()
-    return getattr(record.time, fname)(td)
-
 def calculate_amount_of_sleep(log, rest_per_day, time_limiter = 4 * aDay):
     
     def get_latest_records(log):
@@ -618,7 +617,8 @@ def overslept(config, log):
     def alter(ls_start, ls_end):
         print("? You overslept by")
         
-        new_dt = alter_record_time_by_td(ls_end, '__add__')
+        new_dt = ls_end.alter_time_by_td('__add__')
+        
 
         print("You awoke at", new_dt)
 
@@ -637,7 +637,7 @@ def underslept(config, log):
     def alter(ls_start, ls_end):
         print("? You underslept by")
         
-        new_dt = alter_record_time_by_td(ls_end, '__sub__')
+        new_dt = ls_end.alter_time_by_td('__sub__')
 
         print("You awoke at", new_dt)
 
@@ -655,7 +655,7 @@ def fell_asleep_early(config, log):
     def alter(ls_start, ls_end):
         print("? You fell asleep early by")
         
-        new_dt = alter_record_time_by_td(ls_start, '__sub__')
+        new_dt = ls_start.alter_time_by_td('__sub__')
 
         print("You fell asleep", new_dt)
 
@@ -673,7 +673,7 @@ def fell_asleep_late(config, log):
     def alter(ls_start, ls_end):
         print("? You fell asleep late by")
         
-        new_dt = alter_record_time_by_td(ls_start, '__add__')
+        new_dt = ls_start.alter_time_by_td('__add__')
 
         print("You fell asleep at", new_dt)
 
