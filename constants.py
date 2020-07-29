@@ -1,6 +1,6 @@
 from datetime import timedelta
 
-ALTER_LOG = False
+ALTER_LOG = True
 
 aDay = timedelta(days=1)
 
