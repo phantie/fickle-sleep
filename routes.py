@@ -70,6 +70,7 @@ def overslept(config, log):
             return ls_start, ls_end
 
     log.alter_last_session(alter)
+    log.sync()
 
     return Route(Level(2), message = "You can also tune the time when you fell asleep")
 
@@ -89,6 +90,7 @@ def underslept(config, log):
             return ls_start, ls_end
 
     log.alter_last_session(alter)
+    log.sync()
 
     return Route(Level(2), message = "You can also tune the time when you fell asleep")
 
@@ -108,6 +110,7 @@ def fell_asleep_early(config, log):
 
 
     log.alter_last_session(alter)
+    log.sync()
 
     return Route(Level(2), message = "You can also tune the time when you woke up")
 
@@ -127,6 +130,7 @@ def fell_asleep_late(config, log):
 
 
     log.alter_last_session(alter)
+    log.sync()
 
     return Route(Level(2), message = "You can also tune the time when you woke up")
 
