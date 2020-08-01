@@ -90,25 +90,23 @@ class Config(File):
             self.create()
 
         self.get_data()
-        self.rest_per_day = self.data['rest_per_day']
+        
 
     def load(self):
         assert self.exists
         return toml.load(self.FILE__NAME)
 
-    @staticmethod
-    def receive_data():
+
+    def receive_data(self):
 
         print('? Planned rest per day')
         
-        try:
-            td: timedelta = receive_timedelta()
-        except (ValueError, AssertionError):
+        rest_per_day: timedelta = str(receive_timedelta())
+        
+        if all(locals().get(fname) is not None for fname in self.__dataclass_fields__.keys()):
             exit('Invalid input')
 
-
-        data = dict(rest_per_day = str(td))
-
+        data = dict(rest_per_day = rest_per_day)
         return data
 
     def create(self):
@@ -124,29 +122,40 @@ class Config(File):
 
     def get_data(self):
 
-        def notify_update_load_config():
-            print('! Config file is corrupped')
-            self.update()
-            data = self.load()
-            return data
-
         def parseHM_(s):
-            h, m, _ = s.split(':')
-            return parse_time_period(h, m)
+            try:
+                h, m, _ = s.split(':')
+            except:
+                return
                 
-        data = self.load()
+            return parse_time_period(h, m)
 
-        for field_name, field in self.__dataclass_fields__.items():
-            if not isinstance(data.get(field_name), field.type):
-                data = notify_update_load_config()
-                break
+        while True:
+            fine_state = True
+            data = self.load()
 
-        if not (rpd := parseHM_(data['rest_per_day'])):
-            data = notify_update_load_config()
-        else:
-            data['rest_per_day'] = rpd
+            for field_name, field in self.__dataclass_fields__.items():
+                if not isinstance(data.get(field_name), field.type):
+                    print('! Config file is corrupped')
+                    self.update()
+                    fine_state = False
+                    break
 
-        self.data = data
+            if not fine_state:
+                continue
+                
+            data['rest_per_day'] = parseHM_(data['rest_per_day'])
+
+
+            if not all(var is not None for var in data.values()):
+                print("Corrupted data")
+                self.update()
+                continue
+
+            break
+
+        self.rest_per_day = data['rest_per_day']
+
 
 
 class Log(File):

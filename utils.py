@@ -125,7 +125,7 @@ def print(*args, **kwargs):
             processed = (str(Round.datetime(el))
             .replace(yesterday, "yesterday")
             .replace(today, "today")
-            .replace(tomorrow, "tomorrow"))
+            .replace(tomorrow, "tomorrow")).rsplit(':', maxsplit=1)[0]
 
         elif isinstance(el, timedelta):
             processed = Round.timedelta(el)

@@ -143,6 +143,10 @@ def correct_back(config, log):
 @Route.new(Level(3))
 def update_conf(config, log):
     config.update()
+    config.get_data()
+
+    return Route(Level(0))
+
 
 
 @Route.new(Level(4))
