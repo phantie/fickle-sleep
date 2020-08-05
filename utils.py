@@ -24,13 +24,13 @@ class Round:
 def input_until_correct(message, subsequent_try_message, /, parser: callable, **kwargs):
 
     def wrap_message(message):
-        return "   " + message + ": "
+        return "   {}: ".format(message)
 
     lap = 0
     message = wrap_message(message)
     subsequent_try_message = wrap_message(subsequent_try_message)
     while True:
-        if (parsed := parser(input(message), **kwargs)) is not None:
+        if not_none(parsed := parser(input(message), **kwargs)):
             print()
             return parsed
         lap += 1
@@ -53,9 +53,12 @@ def receive_timedelta() -> timedelta:
     def input_hours_minutes() -> (str, str):
         return input('\tHours: '), input('\tMinutes: ')
 
-    h, m = input_hours_minutes()
-    print()
-    return parse_time_period(h, m)
+    while True:
+        h, m = input_hours_minutes()
+        if not_none(tp := parse_time_period(h, m)):
+            return tp
+        
+        print('\n\t! Incorrect fmt\n\n\tTry again: ')
 
 
 def show_and_select(choices, exclude = []):
@@ -64,7 +67,7 @@ def show_and_select(choices, exclude = []):
             if n.isnumeric():
                 return int(n)
 
-        if (num := parse_int(n)) is not None:
+        if not_none(num := parse_int(n)):
             if num in range(1, choices + 1):
                 return num
 
@@ -74,15 +77,13 @@ def show_and_select(choices, exclude = []):
 
 
     left_indices = list(sorted(set(range(len(choices))) - set(i-1 for i in exclude)))
-    left = []
 
-    for el in left_indices:
-        left.append(choices[el])
+    left = (choices[el] for el in left_indices)
 
     for i, c in enumerate(left):
         print(f"{i+1}. {c.capitalize()}.")
 
-    res = input_until_correct("Enter", "Try again", parse_cli_input, choices = len(left))
+    res = input_until_correct("Enter", "Try again", parse_cli_input, choices = len(left_indices))
     return left_indices[res - 1] + 1
 
 
@@ -137,6 +138,11 @@ def print(*args, **kwargs):
 
     print_dc(*_args, **kwargs)
 
+def is_none(var):
+    return var is None
+
+def not_none(var):
+    return var is not None
 
 def now():
     return Round.datetime(dt.now())

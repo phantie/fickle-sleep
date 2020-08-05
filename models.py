@@ -1,4 +1,4 @@
-from utils import now, get_confirmation, receive_timedelta, parse_time_period, print
+from utils import now, get_confirmation, receive_timedelta, parse_time_period, print, is_none, not_none
 from datetime import datetime as dt, timedelta, date
 from contextlib import contextmanager
 from abc import ABC, abstractmethod
@@ -103,7 +103,7 @@ class Config(File):
         
         rest_per_day: timedelta = str(receive_timedelta())
         
-        if all(locals().get(fname) is not None for fname in self.__dataclass_fields__.keys()):
+        if all(not_none(locals().get(fname)) for fname in self.__dataclass_fields__.keys()):
             exit('Invalid input')
 
         data = dict(rest_per_day = rest_per_day)
@@ -147,7 +147,7 @@ class Config(File):
             data['rest_per_day'] = parseHM_(data['rest_per_day'])
 
 
-            if not all(var is not None for var in data.values()):
+            if not all(not_none(var) for var in data.values()):
                 print("Corrupted data")
                 self.update()
                 continue
@@ -232,11 +232,11 @@ class Log(File):
         return asleep.state is Act.asleep and awake.state is Act.awake
 
     def alter_last_session(self, f: callable):
-        assert self.last_session is not None
+        assert not_none(self.last_session)
 
         ls_start, ls_end = self.last_session
         while True:
-            if (changed_session := f(ls_start, ls_end)) is not None:
+            if not_none(changed_session := f(ls_start, ls_end)):
                 self.last_session = changed_session
                 break
 
@@ -357,5 +357,5 @@ class Route:
 
     @classmethod
     def _set(cls, lvl, func):
-        assert cls.contents.get(str(lvl)) is None, "ambiguity in levels hierarchy"
+        assert is_none(cls.contents.get(str(lvl))), "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
