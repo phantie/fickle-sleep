@@ -256,6 +256,7 @@ class Log(File):
     def last_session(self, tup):
         assert not self.empty
         assert self.check_pair(tup)
+        assert len(tup) == 2
         self.content[-2] = tup[0]
         self.content[-1] = tup[1]
 
@@ -323,10 +324,11 @@ class Level:
 
 @dataclass
 class Route:
-    contents = {}
 
     destination: Level
     message: str = None
+
+    contents = {}
 
     @classmethod
     def new(cls, lvl):

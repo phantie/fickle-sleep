@@ -6,7 +6,7 @@ def cli(config, log, case = Level(0)):
     if route := Route.get(case):
         return route(config, log)
     else:
-        raise Exception("Nonexsitent route", case)
+        raise Exception("Nonexistent route", case)
 
 
 def main():
