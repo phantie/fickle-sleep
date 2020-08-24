@@ -164,7 +164,7 @@ class Log(File):
     def __init__(self):
         if not self.exists:
             self.create()
-        
+
         self.get_content()
         self.sync()
 
@@ -256,7 +256,6 @@ class Log(File):
     def last_session(self, tup):
         assert not self.empty
         assert self.check_pair(tup)
-        assert len(tup) == 2
         self.content[-2] = tup[0]
         self.content[-1] = tup[1]
 
@@ -359,3 +358,14 @@ class Route:
     def _set(cls, lvl, func):
         assert is_none(cls.contents.get(str(lvl))), "ambiguity in levels hierarchy"
         cls.contents[str(lvl)] = func
+
+
+class Timedelta(timedelta):
+    def __new__(cls, *, days=0, minutes=0, hours=0, weeks=0):
+        return super().__new__(cls, weeks=weeks, days=days, hours=hours, minutes=minutes)
+
+    def __str__(self):
+        return super().__str__().rsplit(':', maxsplit=1)[0]
+
+
+# print(Timedelta(minutes=1))

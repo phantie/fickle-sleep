@@ -26,17 +26,17 @@ def input_until_correct(message, subsequent_try_message, /, parser: callable, **
     def wrap_message(message):
         return "   {}: ".format(message)
 
-    lap = 0
+    lap = True
     message = wrap_message(message)
     subsequent_try_message = wrap_message(subsequent_try_message)
     while True:
         if not_none(parsed := parser(input(message), **kwargs)):
             print()
             return parsed
-        lap += 1
-        if lap == 1:
-            message = subsequent_try_message
 
+        if lap:
+            message = subsequent_try_message
+            lap = False
 
 def get_confirmation(message = "? Correct") -> bool:
     def parse_confirmation(arg):
